@@ -78,14 +78,21 @@ async function scriptPost(action, data = {}) {
   } catch (err) {
     clearTimeout(timeoutId);
     if (err.name === 'AbortError') {
-      throw new Error('Kết nối Google Sheet quá hạn (Timeout). Vui lòng thử lại.');
+      const timeoutError = new Error('Kết nối Google Sheet quá hạn (Timeout). Vui lòng thử lại.');
+      timeoutError.code = 'SHEET_TIMEOUT';
+      throw timeoutError;
     }
     throw err;
   }
 }
 
-async function scriptGet(resource = 'all') {
-  return scriptPost('getData', { resource });
+async function scriptGet(resource = 'all', retryOnTimeout = false) {
+  try {
+    return await scriptPost('getData', { resource });
+  } catch (error) {
+    if (!retryOnTimeout || error.code !== 'SHEET_TIMEOUT') throw error;
+    return scriptPost('getData', { resource });
+  }
 }
 
 // ─── RE-EXPORTS TỪ AUTH ─────────────────────────────────────────────────────
@@ -95,8 +102,8 @@ export { hashPassword, getSession, logout, canAccessHouse, checkPermission } fro
 // TẢI TẤT CẢ DỮ LIỆU ĐỒNG THỜI (SWR BATCH LOAD)
 // ════════════════════════════════════════════════════════════════════════════
 
-export async function fetchAllData() {
-    const data = await scriptGet('all');
+export async function fetchAllData({ retryOnTimeout = false } = {}) {
+    const data = await scriptGet('all', retryOnTimeout);
     if (!Array.isArray(data.houses) || !Array.isArray(data.harvests) || !Array.isArray(data.sales)) {
       throw new Error('Dữ liệu từ Google Sheet chưa đầy đủ. Vui lòng đồng bộ lại.');
     }

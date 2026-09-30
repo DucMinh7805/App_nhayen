@@ -56,7 +56,7 @@ export default function App() {
   const loadData = useCallback(async (manual = false, background = false) => {
     if (!session) return;
     if (!background) setIsRefreshing(true);
-    const request = loadingData.current || fetchAllData();
+    const request = loadingData.current || fetchAllData({ retryOnTimeout: !background });
     loadingData.current = request;
     try {
       const data = await request;
@@ -74,7 +74,10 @@ export default function App() {
     } catch (error) {
       if (getSession()?.token !== session.token) return;
       setSyncStatus('offline');
-      if (!background) showToast(`Không thể đồng bộ: ${error.message}. Dữ liệu đang hiển thị chưa được cập nhật.`, 'warning');
+      if (!background) {
+        const reason = String(error.message || 'Lỗi không xác định').replace(/[.!?]+$/, '');
+        showToast(`Không thể đồng bộ: ${reason}. Dữ liệu đang hiển thị chưa được cập nhật.`, 'warning');
+      }
     } finally {
       if (loadingData.current === request) loadingData.current = null;
       if (!background) setIsRefreshing(false);
