@@ -178,8 +178,14 @@ export function isAuthenticated() {
 export function canAccessHouse(session, houseId) {
   if (!session) return false;
   if (session.role === 'admin' || session.role === 'manager') return true;
-  if (!session.allowedHouses) return true;
-  return session.allowedHouses.includes(houseId);
+  if (!session.allowedHouses || session.allowedHouses.length === 0) return true;
+  if (Array.isArray(session.allowedHouses)) {
+    return session.allowedHouses.includes(houseId);
+  }
+  if (typeof session.allowedHouses === 'string') {
+    return session.allowedHouses.split(',').map((s) => s.trim()).includes(houseId);
+  }
+  return true;
 }
 
 export function checkPermission(session, permission) {

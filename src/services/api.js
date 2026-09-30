@@ -112,6 +112,22 @@ export async function addAppUserRemote(userData) {
   return addAppUser(userData);
 }
 
+export async function changePasswordRemote(userId, oldPassword, newPassword) {
+  if (SCRIPT_URL) {
+    await scriptPost('changePassword', { userId, oldPassword, newPassword });
+    return true;
+  }
+  if (HAS_VERCEL_API) {
+    await apiFetch('/api/auth?action=change-password', {
+      method: 'POST',
+      body: { userId, oldPassword, newPassword },
+    });
+    return true;
+  }
+  const { changePassword } = await import('./auth');
+  return changePassword(userId, oldPassword, newPassword);
+}
+
 // ════════════════════════════════════════════════════════════════════════════
 // HOUSES
 // ════════════════════════════════════════════════════════════════════════════
@@ -153,6 +169,7 @@ export async function getHarvests() {
     return (data.harvests || []).map((h) => ({
       ...h,
       weight: Number(h.weight || 0),
+      date: String(h.date || '').slice(0, 10),
     }));
   }
   if (HAS_VERCEL_API) return apiFetch('/api/harvests');
@@ -200,6 +217,8 @@ export async function getSales() {
       weight: Number(s.weight || 0),
       pricePer100g: Number(s.pricePer100g || 0),
       totalAmount: Number(s.totalAmount || 0),
+      date: String(s.date || '').slice(0, 10),
+      customerPhone: s.customerPhone ? String(s.customerPhone).replace(/^'/, '') : '',
     }));
   }
   if (HAS_VERCEL_API) return apiFetch('/api/sales');

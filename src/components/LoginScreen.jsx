@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Eye, EyeOff, Lock, User, LogIn, AlertCircle } from 'lucide-react';
-import { login } from '../services/auth';
+import { loginUser } from '../services/api';
 
 export default function LoginScreen({ onLoginSuccess }) {
   const [username, setUsername] = useState('');
@@ -20,7 +20,7 @@ export default function LoginScreen({ onLoginSuccess }) {
     setError('');
 
     try {
-      const session = await login(username, password);
+      const session = await loginUser(username, password);
       onLoginSuccess(session);
     } catch (err) {
       setError(err.message || 'Đăng nhập thất bại. Vui lòng thử lại.');

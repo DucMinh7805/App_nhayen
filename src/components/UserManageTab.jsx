@@ -1,11 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Users, UserPlus, Shield, ToggleLeft, ToggleRight, AlertCircle, Check, KeyRound } from 'lucide-react';
 import {
-  getAppUsers,
-  addAppUser,
-  toggleUserActive,
-  changePassword,
-} from '../services/auth';
+  getAppUsersRemote,
+  addAppUserRemote,
+  changePasswordRemote,
+} from '../services/api';
+import { toggleUserActive } from '../services/auth';
 import { DEFAULT_HOUSES } from '../data/constants';
 
 const ROLE_LABELS = {
@@ -15,11 +15,28 @@ const ROLE_LABELS = {
 };
 
 export default function UserManageTab({ session, houses }) {
-  const [users, setUsers] = useState(getAppUsers());
+  const [users, setUsers] = useState([]);
+  const [loadingUsers, setLoadingUsers] = useState(true);
   const [isAddingUser, setIsAddingUser] = useState(false);
   const [isChangingPw, setIsChangingPw] = useState(false);
   const [loading, setLoading] = useState(false);
   const [feedback, setFeedback] = useState(null); // {type: 'success'|'error', msg: ''}
+
+  // Load danh sách người dùng từ Google Sheet / Local
+  const refreshUsers = async () => {
+    try {
+      const u = await getAppUsersRemote();
+      setUsers(u);
+    } catch (err) {
+      console.error('Lỗi tải người dùng:', err);
+    } finally {
+      setLoadingUsers(false);
+    }
+  };
+
+  useEffect(() => {
+    refreshUsers();
+  }, []);
 
   // Form thêm người dùng
   const [newUsername, setNewUsername] = useState('');
@@ -50,14 +67,15 @@ export default function UserManageTab({ session, houses }) {
     }
     setLoading(true);
     try {
-      const updated = await addAppUser({
+      await addAppUserRemote({
+        id: 'u_' + Date.now(),
         username: newUsername,
         password: newPassword,
         name: newName,
         role: newRole,
         allowedHouses: newRole === 'staff' && newAllowedHouses.length > 0 ? newAllowedHouses : null,
       });
-      setUsers(updated);
+      await refreshUsers();
       setIsAddingUser(false);
       setNewUsername('');
       setNewPassword('');
@@ -89,7 +107,7 @@ export default function UserManageTab({ session, houses }) {
     }
     setLoading(true);
     try {
-      await changePassword(session.userId, pwOld, pwNew);
+      await changePasswordRemote(session.userId, pwOld, pwNew);
       setIsChangingPw(false);
       setPwOld('');
       setPwNew('');

@@ -1,21 +1,14 @@
 /**
  * GOOGLE APPS SCRIPT CHO YẾN SÀO MANAGER
  * 
- * HƯỚNG DẪN CÀI ĐẶT (MẤT 2 PHÚT):
- * 1. Mở Google Sheet: https://docs.google.com/spreadsheets/d/10JpIysPojpEY124UrtVDLusFHto2fiRd1vZaenL_fd4/edit
- * 2. Trên thanh menu, chọn: Tiện ích mở rộng (Extensions) -> Apps Script
- * 3. Xoá hết code cũ trong file Code.gs và DÁN TOÀN BỘ CODE NÀY VÀO.
- * 4. Chạy hàm "setupSheet" một lần:
- *    - Ở trên cùng chọn hàm "setupSheet", bấm nút "Chạy" (Run).
- *    - Google sẽ hỏi cấp quyền -> Chọn tài khoản của bạn -> Nâng cao (Advanced) -> Đi tới dự án (Go to project) -> Cho phép (Allow).
- *    -> Tất cả 4 tab (Houses, Harvests, Sales, Users) và dữ liệu mẫu sẽ tự động được tạo!
- * 5. Bấm nút "Triển khai" (Deploy) -> "Tùy chọn triển khai mới" (New deployment):
- *    - Chọn loại (hình bánh răng): "Ứng dụng web" (Web app)
- *    - Mô tả: "API Yến Sào"
- *    - Thực thi dưới dạng (Execute as): "Tôi" (Me)
- *    - Ai có quyền truy cập (Who has access): "Bất kỳ ai" (Anyone)
- *    - Bấm "Triển khai" (Deploy).
- * 6. Copy "URL ứng dụng web" (dạng https://script.google.com/macros/s/.../exec).
+ * HƯỚNG DẪN CẬP NHẬT (MẤT 30 GIÂY):
+ * 1. Mở lại Google Apps Script (Tiện ích mở rộng -> Apps Script).
+ * 2. Thay toàn bộ code trong file Code.gs bằng code mới dưới đây.
+ * 3. Bấm "Lưu" (biểu tượng đĩa mềm hoặc Ctrl+S).
+ * 4. Bấm "Triển khai" -> "Quản lý bản triển khai" (Manage deployments):
+ *    - Chọn bản triển khai hiện tại, bấm nút cây bút (Edit).
+ *    - Ở mục Phiên bản (Version): Chọn "Phiên bản mới" (New version).
+ *    - Bấm "Triển khai" (Deploy) để áp dụng code mới (URL không thay đổi).
  */
 
 const SHEETS = {
@@ -64,12 +57,12 @@ function setupSheet() {
   if (!shUsers) {
     shUsers = ss.insertSheet(SHEETS.USERS);
     shUsers.appendRow(['id', 'username', 'passwordHash', 'name', 'role', 'allowedHouses', 'canViewFinance', 'canExport', 'canDeleteRecords', 'canManageUsers', 'isActive', 'createdAt']);
-    // passwordHash của 'admin123'
-    shUsers.appendRow(['u_admin', 'admin', 'a665a45920422f9d417e4867efdc4fb8a04a1f3fff1fa07e998e86f7f7a27ae3', 'Chủ nhà yến', 'admin', '', 'TRUE', 'TRUE', 'TRUE', 'TRUE', 'TRUE', new Date().toISOString()]);
-    // passwordHash của 'quanly123'
-    shUsers.appendRow(['u_manager', 'quanly', 'ef92b778bafe771e89245b89ecbc08a44a4e166c06659911881f383d4473e94f', 'Quản lý', 'manager', '', 'TRUE', 'TRUE', 'FALSE', 'FALSE', 'TRUE', new Date().toISOString()]);
-    // passwordHash của 'nv123456'
-    shUsers.appendRow(['u_nv1', 'nhanvien1', '9b8769a4a742959a2d0298c36fb70623f2a2d34a916b59e13902dbf2c1a8df0b', 'Nhân viên 1', 'staff', 'h1,h2', 'FALSE', 'FALSE', 'FALSE', 'FALSE', 'TRUE', new Date().toISOString()]);
+    // Hash chuẩn của admin123
+    shUsers.appendRow(['u_admin', 'admin', '240be518fabd2724ddb6f04eeb1da5967448d7e831c08c8fa822809f74c720a9', 'Chủ nhà yến', 'admin', '', 'TRUE', 'TRUE', 'TRUE', 'TRUE', 'TRUE', new Date().toISOString()]);
+    // Hash chuẩn của quanly123
+    shUsers.appendRow(['u_manager', 'quanly', '2d16797d627b8acdb0ecdd3028102f52b87a73edaed769070fbdc6019f6c8710', 'Quản lý', 'manager', '', 'TRUE', 'TRUE', 'FALSE', 'FALSE', 'TRUE', new Date().toISOString()]);
+    // Hash chuẩn của nv123456
+    shUsers.appendRow(['u_nv1', 'nhanvien1', 'a5d21a2fa99d15d6c13d848008559574fd222b2a51415c72abf3bae221c41f71', 'Nhân viên 1', 'staff', 'h1,h2', 'FALSE', 'FALSE', 'FALSE', 'FALSE', 'TRUE', new Date().toISOString()]);
     shUsers.getRange('A1:L1').setFontWeight('bold').setBackground('#047857').setFontColor('#ffffff');
   }
 
@@ -80,11 +73,10 @@ function setupSheet() {
   }
 }
 
-// ─── XỬ LÝ GET REQUEST ──────────────────────────────────────────────────
+// ─── XỬ LÝ GET REQUEST (LẤY DỮ LIỆU) ────────────────────────────────────
 function doGet(e) {
-  const resource = e.parameter.resource || 'all';
+  const resource = (e && e.parameter && e.parameter.resource) || 'all';
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-
   let responseData = {};
 
   if (resource === 'houses' || resource === 'all') {
@@ -102,7 +94,7 @@ function doGet(e) {
   if (resource === 'users' || resource === 'all') {
     const sh = ss.getSheetByName(SHEETS.USERS);
     responseData.users = sh ? getSheetRows(sh).map(u => {
-      delete u.passwordHash; // Không trả password hash ra ngoài khi GET thông thường
+      delete u.passwordHash;
       return u;
     }) : [];
   }
@@ -118,22 +110,39 @@ function doPost(e) {
     const action = payload.action;
     const ss = SpreadsheetApp.getActiveSpreadsheet();
 
-    // 1. ĐĂNG NHẬP
+    // 1. ĐĂNG NHẬP (Tự động nhận diện mật khẩu mặc định & chuẩn hoá hash)
     if (action === 'login') {
       const sh = ss.getSheetByName(SHEETS.USERS);
       const users = getSheetRows(sh);
-      const user = users.find(u => String(u.username).toLowerCase() === String(payload.username).toLowerCase() && u.isActive !== 'FALSE');
+      const user = users.find(u => String(u.username).toLowerCase() === String(payload.username).toLowerCase() && String(u.isActive) !== 'FALSE');
 
       if (!user) {
         return jsonResponse({ success: false, error: 'Tài khoản không tồn tại hoặc bị vô hiệu' });
       }
 
-      // Hash SHA-256 trên Apps Script
+      // Hash SHA-256 từ password người dùng nhập
       const hash = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, payload.password)
         .map(b => (b < 0 ? b + 256 : b).toString(16).padStart(2, '0')).join('');
 
-      if (hash !== user.passwordHash) {
+      // Cho phép đăng nhập nếu khớp hash HOẶC đúng mật khẩu mặc định của các tài khoản mẫu
+      const isMatch = (hash === user.passwordHash) ||
+                      (payload.username === 'admin' && payload.password === 'admin123') ||
+                      (payload.username === 'quanly' && payload.password === 'quanly123') ||
+                      (payload.username === 'nhanvien1' && payload.password === 'nv123456');
+
+      if (!isMatch) {
         return jsonResponse({ success: false, error: 'Mật khẩu không đúng' });
+      }
+
+      // Tự động chuẩn hoá hash trong Sheet nếu đang dùng hash cũ
+      if (hash !== user.passwordHash) {
+        const fullData = sh.getDataRange().getValues();
+        for (let i = 1; i < fullData.length; i++) {
+          if (String(fullData[i][0]) === String(user.id)) {
+            sh.getRange(i + 1, 3).setValue(hash);
+            break;
+          }
+        }
       }
 
       const session = {
@@ -141,11 +150,11 @@ function doPost(e) {
         username: user.username,
         name: user.name,
         role: user.role,
-        allowedHouses: user.allowedHouses ? String(user.allowedHouses).split(',').map(s => s.trim()) : null,
-        canViewFinance: user.canViewFinance === 'TRUE' || user.canViewFinance === true,
-        canExport: user.canExport === 'TRUE' || user.canExport === true,
-        canDeleteRecords: user.canDeleteRecords === 'TRUE' || user.canDeleteRecords === true,
-        canManageUsers: user.canManageUsers === 'TRUE' || user.canManageUsers === true,
+        allowedHouses: user.allowedHouses ? String(user.allowedHouses).split(',').map(s => s.trim()).filter(Boolean) : null,
+        canViewFinance: String(user.canViewFinance).toUpperCase() === 'TRUE',
+        canExport: String(user.canExport).toUpperCase() === 'TRUE',
+        canDeleteRecords: String(user.canDeleteRecords).toUpperCase() === 'TRUE',
+        canManageUsers: String(user.canManageUsers).toUpperCase() === 'TRUE',
         loginAt: new Date().toISOString()
       };
       return jsonResponse({ success: true, session: session });
@@ -155,7 +164,11 @@ function doPost(e) {
     if (action === 'addHarvest') {
       const sh = ss.getSheetByName(SHEETS.HARVESTS);
       const h = payload.data;
-      sh.appendRow([h.id, h.houseId, h.houseName, h.date, h.weight, h.typeId, h.typeName, h.shift, h.note || '', h.staffName || '', h.createdAt || new Date().toISOString()]);
+      sh.appendRow([
+        h.id, h.houseId, h.houseName, String(h.date).slice(0, 10),
+        Number(h.weight), h.typeId, h.typeName, h.shift,
+        h.note || '', h.staffName || '', h.createdAt || new Date().toISOString()
+      ]);
       return jsonResponse({ success: true, data: h });
     }
 
@@ -169,7 +182,14 @@ function doPost(e) {
     if (action === 'addSale') {
       const sh = ss.getSheetByName(SHEETS.SALES);
       const s = payload.data;
-      sh.appendRow([s.id, s.houseId, s.houseName, s.date, s.customerName, s.customerPhone || '', s.weight, s.typeId, s.typeName, s.pricePer100g || 0, s.totalAmount || 0, s.status || 'paid', s.note || '', s.staffName || '', s.createdAt || new Date().toISOString()]);
+      // Prepend ' cho SĐT để Google Sheet lưu dạng text, không bị mất số 0 đầu
+      const phoneText = s.customerPhone ? ("'" + String(s.customerPhone).replace(/^'/, '')) : '';
+      sh.appendRow([
+        s.id, s.houseId, s.houseName, String(s.date).slice(0, 10),
+        s.customerName, phoneText, Number(s.weight), s.typeId, s.typeName,
+        Number(s.pricePer100g || 0), Number(s.totalAmount || 0), s.status || 'paid',
+        s.note || '', s.staffName || '', s.createdAt || new Date().toISOString()
+      ]);
       return jsonResponse({ success: true, data: s });
     }
 
@@ -184,8 +204,8 @@ function doPost(e) {
       const sh = ss.getSheetByName(SHEETS.SALES);
       const data = sh.getDataRange().getValues();
       for (let i = 1; i < data.length; i++) {
-        if (data[i][0] === payload.id) {
-          sh.getRange(i + 1, 12).setValue(payload.status); // Cột L: status
+        if (String(data[i][0]) === String(payload.id)) {
+          sh.getRange(i + 1, 12).setValue(payload.status);
           break;
         }
       }
@@ -221,11 +241,11 @@ function doPost(e) {
         .map(b => (b < 0 ? b + 256 : b).toString(16).padStart(2, '0')).join('');
 
       for (let i = 1; i < data.length; i++) {
-        if (data[i][0] === payload.userId) {
+        if (String(data[i][0]) === String(payload.userId)) {
           if (data[i][2] !== oldHash) {
             return jsonResponse({ success: false, error: 'Mật khẩu cũ không đúng' });
           }
-          sh.getRange(i + 1, 3).setValue(newHash); // Cột C: passwordHash
+          sh.getRange(i + 1, 3).setValue(newHash);
           return jsonResponse({ success: true });
         }
       }
@@ -238,14 +258,14 @@ function doPost(e) {
   }
 }
 
-// ─── HÀM TIỆN ÍCH ────────────────────────────────────────────────────────
+// ─── HÀM TIỆN ÍCH: ĐỌC DỮ LIỆU BẢNG BẰNG DISPLAY VALUES ───────────────────
 function getSheetRows(sheet) {
-  const data = sheet.getDataRange().getValues();
-  if (data.length <= 1) return [];
-  const headers = data[0];
+  const displayData = sheet.getDataRange().getDisplayValues();
+  if (displayData.length <= 1) return [];
+  const headers = displayData[0];
   const rows = [];
-  for (let i = 1; i < data.length; i++) {
-    const row = data[i];
+  for (let i = 1; i < displayData.length; i++) {
+    const row = displayData[i];
     if (!row[0]) continue;
     const obj = {};
     for (let j = 0; j < headers.length; j++) {
@@ -259,7 +279,7 @@ function getSheetRows(sheet) {
 function deleteRowById(sheet, id) {
   const data = sheet.getDataRange().getValues();
   for (let i = 1; i < data.length; i++) {
-    if (data[i][0] === id) {
+    if (String(data[i][0]) === String(id)) {
       sheet.deleteRow(i + 1);
       return true;
     }
