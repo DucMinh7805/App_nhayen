@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import LoginScreen from './components/LoginScreen';
 import Header from './components/Header';
+import DesktopSidebar from './components/DesktopSidebar';
 import HarvestTab from './components/HarvestTab';
 import HistoryTab from './components/HistoryTab';
 import InventoryTab from './components/InventoryTab';
@@ -77,12 +78,12 @@ export default function App() {
   // ─── Cập nhật nhà yến được phân công cho nhân viên ────────────────────────
   const visibleHouses = useMemo(() => {
     if (!session) return [];
-    if (!session.allowedHouses || session.allowedHouses.length === 0 || session.role === 'admin' || session.role === 'manager') {
+    if (!session.allowedHouses || session.allowedHouses.length === 0 || session.role === 'admin') {
       return houses;
     }
     const allowed = Array.isArray(session.allowedHouses)
       ? session.allowedHouses
-      : String(session.allowedHouses).split(',').map((s) => s.trim());
+      : String(session.allowedHouses).split(',').map((s) => s.trim()).filter(Boolean);
     return houses.filter((h) => allowed.includes(h.id));
   }, [houses, session]);
 
@@ -106,7 +107,6 @@ export default function App() {
       return;
     }
 
-    // Optimistic UI Update
     setHarvests((prev) => [newHarvest, ...prev]);
     showToast(`Đã ghi nhận +${newHarvest.weight}g vào kho [${newHarvest.houseName}]`, 'success');
 
@@ -305,6 +305,77 @@ export default function App() {
     });
   };
 
+  // ─── RENDER NỘI DUNG TAB CHÍNH ────────────────────────────────────────────
+  const renderTabContent = () => {
+    switch (activeTab) {
+      case 'harvest':
+        return (
+          <HarvestTab
+            activeHouse={activeHouse || visibleHouses[0]}
+            session={session}
+            harvests={harvests.filter((h) => canAccessHouse(session, h.houseId))}
+            onAddHarvest={handleAddHarvest}
+            onDeleteHarvest={handleDeleteHarvest}
+            onNavigateToHistory={() => setActiveTab('history')}
+            onRequestDelete={handleRequestDelete}
+          />
+        );
+      case 'history':
+        return (
+          <HistoryTab
+            houses={visibleHouses}
+            harvests={harvests.filter((h) => canAccessHouse(session, h.houseId))}
+            sales={sales.filter((s) => canAccessHouse(session, s.houseId))}
+            inventoryData={inventoryData}
+            onDeleteHarvest={handleDeleteHarvest}
+            session={session}
+            onRequestDelete={handleRequestDelete}
+          />
+        );
+      case 'inventory':
+        return (
+          <InventoryTab
+            inventoryData={{
+              ...inventoryData,
+              byHouse: inventoryData.byHouse.filter((h) => canAccessHouse(session, h.houseId)),
+            }}
+            houses={visibleHouses}
+            session={session}
+            onTransferStock={handleTransferStock}
+          />
+        );
+      case 'sales':
+        return (
+          <SalesTab
+            houses={visibleHouses}
+            sales={sales.filter((s) => canAccessHouse(session, s.houseId))}
+            inventoryData={inventoryData}
+            session={session}
+            onAddSale={handleAddSale}
+            onDeleteSale={handleDeleteSale}
+            onUpdateSaleStatus={handleUpdateSaleStatus}
+            onRequestDelete={handleRequestDelete}
+          />
+        );
+      case 'houses':
+        return (
+          <HousesTab
+            houses={houses}
+            session={session}
+            onSaveHouses={handleSaveHouses}
+            onResetData={handleResetData}
+            onRequestDelete={handleRequestDelete}
+          />
+        );
+      case 'users':
+        return (
+          <UserManageTab session={session} houses={houses} />
+        );
+      default:
+        return null;
+    }
+  };
+
   // ─── NẾU CHƯA ĐĂNG NHẬP ───────────────────────────────────────────────────
   if (!session) {
     return (
@@ -318,13 +389,61 @@ export default function App() {
     );
   }
 
-  // ─── GIAO DIỆN CHÍNH (PRO LUXURY MOBILE SHELL) ────────────────────────────
+  // ─── GIAO DIỆN CHÍNH (DESKTOP & MOBILE RESPONSIVE) ─────────────────────────
   return (
-    <div className="min-h-screen bg-slate-100/70 sm:py-4 flex justify-center text-slate-800">
-      {/* Khung ứng dụng Mobile App Shell */}
-      <div className="w-full max-w-md bg-slate-50 min-h-screen sm:min-h-[860px] sm:max-h-[920px] flex flex-col shadow-sm sm:shadow-2xl sm:rounded-3xl sm:border border-slate-200/80 overflow-hidden relative">
+    <div className="min-h-screen bg-slate-100 text-slate-800 flex justify-center">
+      {/* ─── DESKTOP LAYOUT (Màn hình máy tính & iPad ngang) ────────────────── */}
+      <div className="w-full min-h-screen hidden md:flex">
+        {/* Sidebar Cố Định Bên Trái */}
+        <DesktopSidebar
+          activeTab={activeTab}
+          setActiveTab={setActiveTab}
+          session={session}
+          houses={visibleHouses}
+          activeHouse={activeHouse || visibleHouses[0] || DEFAULT_HOUSES[0]}
+          setActiveHouse={setActiveHouse}
+          onLogout={() => {
+            logout();
+            setSession(null);
+            showToast('Đã đăng xuất khỏi hệ thống', 'info');
+          }}
+          onRefresh={() => loadData(true)}
+          isRefreshing={isRefreshing}
+          harvests={harvests}
+          sales={sales}
+          inventoryData={inventoryData}
+        />
 
-        {/* Header trên cùng */}
+        {/* Vùng Nội Dung Chính Rộng Rãi Bên Phải */}
+        <div className="flex-1 min-h-screen bg-slate-50/90 p-6 lg:p-8 overflow-y-auto max-w-7xl mx-auto">
+          {/* Topbar Desktop */}
+          <Header
+            activeHouse={activeHouse || visibleHouses[0] || DEFAULT_HOUSES[0]}
+            setActiveHouse={setActiveHouse}
+            houses={visibleHouses}
+            session={session}
+            onLogout={() => {
+              logout();
+              setSession(null);
+              showToast('Đã đăng xuất khỏi hệ thống', 'info');
+            }}
+            onRefresh={() => loadData(true)}
+            isRefreshing={isRefreshing}
+            harvests={harvests}
+            sales={sales}
+            inventoryData={inventoryData}
+            activeTab={activeTab}
+          />
+
+          {/* Nội dung Tab */}
+          <main className="pb-12">
+            {renderTabContent()}
+          </main>
+        </div>
+      </div>
+
+      {/* ─── MOBILE LAYOUT (Màn hình điện thoại di động) ────────────────────── */}
+      <div className="md:hidden w-full bg-slate-50 min-h-screen flex flex-col shadow-sm overflow-hidden relative">
         <Header
           activeHouse={activeHouse || visibleHouses[0] || DEFAULT_HOUSES[0]}
           setActiveHouse={setActiveHouse}
@@ -340,91 +459,27 @@ export default function App() {
           harvests={harvests}
           sales={sales}
           inventoryData={inventoryData}
+          activeTab={activeTab}
         />
 
-        {/* Nội dung các Tab */}
-        <main className="flex-1 p-3.5 sm:p-4 pb-8 overflow-y-auto">
-          {activeTab === 'harvest' && (
-            <HarvestTab
-              activeHouse={activeHouse || visibleHouses[0]}
-              session={session}
-              harvests={harvests.filter((h) => canAccessHouse(session, h.houseId))}
-              onAddHarvest={handleAddHarvest}
-              onDeleteHarvest={handleDeleteHarvest}
-              onNavigateToHistory={() => setActiveTab('history')}
-              onRequestDelete={handleRequestDelete}
-            />
-          )}
-
-          {activeTab === 'history' && (
-            <HistoryTab
-              houses={visibleHouses}
-              harvests={harvests.filter((h) => canAccessHouse(session, h.houseId))}
-              sales={sales.filter((s) => canAccessHouse(session, s.houseId))}
-              inventoryData={inventoryData}
-              onDeleteHarvest={handleDeleteHarvest}
-              session={session}
-              onRequestDelete={handleRequestDelete}
-            />
-          )}
-
-          {activeTab === 'inventory' && (
-            <InventoryTab
-              inventoryData={{
-                ...inventoryData,
-                byHouse: inventoryData.byHouse.filter((h) => canAccessHouse(session, h.houseId)),
-              }}
-              houses={visibleHouses}
-              session={session}
-              onTransferStock={handleTransferStock}
-            />
-          )}
-
-          {activeTab === 'sales' && (
-            <SalesTab
-              houses={visibleHouses}
-              sales={sales.filter((s) => canAccessHouse(session, s.houseId))}
-              inventoryData={inventoryData}
-              session={session}
-              onAddSale={handleAddSale}
-              onDeleteSale={handleDeleteSale}
-              onUpdateSaleStatus={handleUpdateSaleStatus}
-              onRequestDelete={handleRequestDelete}
-            />
-          )}
-
-          {activeTab === 'houses' && (
-            <HousesTab
-              houses={houses}
-              session={session}
-              onSaveHouses={handleSaveHouses}
-              onResetData={handleResetData}
-              onRequestDelete={handleRequestDelete}
-            />
-          )}
-
-          {activeTab === 'users' && (
-            <UserManageTab session={session} houses={houses} />
-          )}
+        <main className="flex-1 p-3.5 pb-24 overflow-y-auto">
+          {renderTabContent()}
         </main>
 
-        {/* Thanh Điều Hướng Đáy Màn Hình */}
         <BottomNav activeTab={activeTab} setActiveTab={setActiveTab} session={session} />
-
-        {/* Toast thông báo nổi */}
-        <Toast toast={toast} onClose={() => setToast(null)} />
-
-        {/* Modal xác nhận */}
-        <ConfirmModal
-          isOpen={confirmModal.isOpen}
-          title={confirmModal.title}
-          message={confirmModal.message}
-          confirmLabel={confirmModal.confirmLabel}
-          variant={confirmModal.variant}
-          onConfirm={confirmModal.onConfirm}
-          onCancel={() => setConfirmModal({ isOpen: false })}
-        />
       </div>
+
+      {/* ─── TOAST & MODAL TOÀN CỤC ─────────────────────────────────────────── */}
+      <Toast toast={toast} onClose={() => setToast(null)} />
+      <ConfirmModal
+        isOpen={confirmModal.isOpen}
+        title={confirmModal.title}
+        message={confirmModal.message}
+        confirmLabel={confirmModal.confirmLabel}
+        variant={confirmModal.variant}
+        onConfirm={confirmModal.onConfirm}
+        onCancel={() => setConfirmModal({ isOpen: false })}
+      />
     </div>
   );
 }

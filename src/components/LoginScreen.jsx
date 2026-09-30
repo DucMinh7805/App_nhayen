@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Eye, EyeOff, Lock, User, LogIn, AlertCircle, Sparkles, CheckSquare, Square } from 'lucide-react';
+import { Eye, EyeOff, Lock, User, LogIn, AlertCircle, Sparkles, CheckSquare, Square, ShieldCheck, UserCheck } from 'lucide-react';
 import { loginUser } from '../services/api';
 
 export default function LoginScreen({ onLoginSuccess }) {
@@ -34,7 +34,7 @@ export default function LoginScreen({ onLoginSuccess }) {
     handleLogin(username, password);
   };
 
-  // Quick 1-tap login
+  // Quick 1-tap login: 2 roles only
   const handleQuickLogin = (roleUser, rolePass) => {
     setUsername(roleUser);
     setPassword(rolePass);
@@ -42,26 +42,26 @@ export default function LoginScreen({ onLoginSuccess }) {
   };
 
   return (
-    <div className="min-h-screen bg-slate-100/80 sm:py-10 flex justify-center items-center p-4">
-      <div className="w-full max-w-sm bg-white rounded-3xl shadow-xl border border-slate-200/80 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+    <div className="min-h-screen bg-slate-100 flex items-center justify-center p-4 sm:p-6 lg:p-8">
+      <div className="w-full max-w-md bg-white rounded-3xl shadow-2xl border border-slate-200/80 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
         {/* Brand Header */}
-        <div className="bg-gradient-to-br from-emerald-800 to-emerald-700 px-6 py-7 text-center text-white relative">
-          <div className="w-14 h-14 rounded-2xl bg-white/15 border border-white/25 flex items-center justify-center text-white font-black text-2xl mx-auto mb-2.5 shadow-inner">
+        <div className="bg-gradient-to-br from-emerald-800 to-emerald-700 px-6 py-8 text-center text-white relative">
+          <div className="w-16 h-16 rounded-2xl bg-white/15 border border-white/25 flex items-center justify-center text-white font-black text-3xl mx-auto mb-3 shadow-inner">
             Y
           </div>
-          <h1 className="font-extrabold text-lg tracking-tight">Yến Sào Manager</h1>
-          <p className="text-emerald-100 text-xs mt-0.5 opacity-90">Hệ thống quản lý sản lượng & tồn kho chuyên nghiệp</p>
-          <div className="inline-flex items-center gap-1.5 bg-emerald-950/30 border border-emerald-400/20 px-2.5 py-0.5 rounded-full text-[10px] font-medium text-emerald-200 mt-2.5">
+          <h1 className="font-extrabold text-xl tracking-tight">Yến Sào Manager</h1>
+          <p className="text-emerald-100 text-xs mt-1 opacity-90">Hệ thống quản lý sản lượng & tồn kho chuyên nghiệp</p>
+          <div className="inline-flex items-center gap-1.5 bg-emerald-950/30 border border-emerald-400/20 px-3 py-0.5 rounded-full text-[10px] font-medium text-emerald-200 mt-3">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
             Kết nối Google Sheet Cloud
           </div>
         </div>
 
         {/* Login Form */}
-        <div className="px-6 py-6 space-y-4">
+        <div className="px-6 py-7 space-y-4">
           <div>
             <h2 className="text-sm font-bold text-slate-800">Đăng nhập tài khoản</h2>
-            <p className="text-[11px] text-slate-400">Nhập thông tin hoặc chọn đăng nhập nhanh</p>
+            <p className="text-[11px] text-slate-400">Chọn vai trò đăng nhập hoặc nhập tài khoản của bạn</p>
           </div>
 
           {error && (
@@ -71,7 +71,7 @@ export default function LoginScreen({ onLoginSuccess }) {
             </div>
           )}
 
-          <form onSubmit={handleFormSubmit} className="space-y-3">
+          <form onSubmit={handleFormSubmit} className="space-y-3.5">
             {/* Username */}
             <div>
               <label className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider block mb-1">
@@ -82,7 +82,7 @@ export default function LoginScreen({ onLoginSuccess }) {
                   type="text"
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
-                  placeholder="admin / quanly / nhanvien1"
+                  placeholder="admin / nhanvien1"
                   autoCapitalize="none"
                   autoCorrect="off"
                   disabled={loading}
@@ -129,7 +129,7 @@ export default function LoginScreen({ onLoginSuccess }) {
                 ) : (
                   <Square className="w-4 h-4 text-slate-300" />
                 )}
-                <span>Duy trì đăng nhập</span>
+                <span>Duy trì đăng nhập trên thiết bị này</span>
               </button>
             </div>
 
@@ -147,40 +147,36 @@ export default function LoginScreen({ onLoginSuccess }) {
             </button>
           </form>
 
-          {/* Quick 1-tap Login Buttons */}
+          {/* Quick 1-tap Login Buttons: 2 roles */}
           <div className="border-t border-slate-100 pt-4 space-y-2">
             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1">
-              <Sparkles className="w-3 h-3 text-amber-500" /> 1-Chạm đăng nhập nhanh:
+              <Sparkles className="w-3 h-3 text-amber-500" /> Chọn vai trò đăng nhập nhanh:
             </p>
-            <div className="grid grid-cols-3 gap-1.5">
+            <div className="grid grid-cols-2 gap-2">
               <button
                 type="button"
                 disabled={loading}
                 onClick={() => handleQuickLogin('admin', 'admin123')}
-                className="p-2 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200/80 rounded-xl text-left transition cursor-pointer active:scale-95"
+                className="p-3 bg-emerald-50/80 hover:bg-emerald-100 border border-emerald-200/80 rounded-2xl text-left transition cursor-pointer active:scale-95 group"
               >
-                <div className="text-[11px] font-bold text-emerald-900">Admin</div>
-                <div className="text-[9px] text-emerald-700">Chủ nhà</div>
-              </button>
-
-              <button
-                type="button"
-                disabled={loading}
-                onClick={() => handleQuickLogin('quanly', 'quanly123')}
-                className="p-2 bg-blue-50 hover:bg-blue-100 border border-blue-200/80 rounded-xl text-left transition cursor-pointer active:scale-95"
-              >
-                <div className="text-[11px] font-bold text-blue-900">Quản lý</div>
-                <div className="text-[9px] text-blue-700">Xem tài chính</div>
+                <div className="flex items-center gap-1.5 font-bold text-xs text-emerald-900 group-hover:text-emerald-800">
+                  <ShieldCheck className="w-4 h-4 text-emerald-700" />
+                  <span>Admin</span>
+                </div>
+                <div className="text-[11px] text-emerald-700 mt-0.5">Toàn quyền hệ thống</div>
               </button>
 
               <button
                 type="button"
                 disabled={loading}
                 onClick={() => handleQuickLogin('nhanvien1', 'nv123456')}
-                className="p-2 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-xl text-left transition cursor-pointer active:scale-95"
+                className="p-3 bg-slate-100/80 hover:bg-slate-200/80 border border-slate-200 rounded-2xl text-left transition cursor-pointer active:scale-95 group"
               >
-                <div className="text-[11px] font-bold text-slate-800">Nhân viên</div>
-                <div className="text-[9px] text-slate-500">Nhập phiếu</div>
+                <div className="flex items-center gap-1.5 font-bold text-xs text-slate-800 group-hover:text-slate-900">
+                  <UserCheck className="w-4 h-4 text-slate-600" />
+                  <span>Nhân viên</span>
+                </div>
+                <div className="text-[11px] text-slate-500 mt-0.5">Nhập phiếu & bán hàng</div>
               </button>
             </div>
           </div>

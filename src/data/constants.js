@@ -23,8 +23,7 @@ export const SHIFTS = [
 
 export const USERS = [
   { id: 'u_admin', username: 'admin', name: 'Chủ nhà yến (Admin)', role: 'admin', label: 'Quản trị viên' },
-  { id: 'u_manager', username: 'quanly', name: 'Quản lý kho', role: 'manager', label: 'Quản lý' },
-  { id: 'u_nv1', username: 'nhanvien1', name: 'Nhân viên 1', role: 'staff', label: 'Nhân viên thu hái' },
+  { id: 'u_nv1', username: 'nhanvien1', name: 'Nhân viên A', role: 'staff', label: 'Nhân viên' },
 ];
 
 export const INITIAL_HARVESTS = [
@@ -51,7 +50,7 @@ export const INITIAL_HARVESTS = [
     typeName: 'Tổ thô xô (Loại B)',
     shift: 'Ca sáng',
     note: 'Thu cánh phải tầng 2',
-    staffName: 'Nhân viên 1',
+    staffName: 'Nhân viên A',
     createdAt: '2026-09-24T10:15:00Z',
   },
   {
@@ -101,7 +100,7 @@ export const INITIAL_SALES = [
     totalAmount: 12000000,
     status: 'debt',
     note: 'Hẹn thanh toán ngày 05 tháng sau',
-    staffName: 'Nhân viên 1',
+    staffName: 'Nhân viên A',
     createdAt: '2026-09-23T11:00:00Z',
   },
 ];
