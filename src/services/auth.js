@@ -157,11 +157,12 @@ export async function login(username, password) {
 
 export function logout() {
   sessionStorage.removeItem(AUTH_KEY);
+  localStorage.removeItem(AUTH_KEY);
 }
 
 export function getSession() {
   try {
-    const raw = sessionStorage.getItem(AUTH_KEY);
+    const raw = localStorage.getItem(AUTH_KEY) || sessionStorage.getItem(AUTH_KEY);
     if (!raw) return null;
     return JSON.parse(raw);
   } catch {
