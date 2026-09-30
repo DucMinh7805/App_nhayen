@@ -1,386 +1,128 @@
-import React, { useState, useMemo } from 'react';
-import { Filter, Calendar, Search, Download, Trash2, TrendingUp, Sparkles, Scale, ShoppingBag, ArrowUpRight } from 'lucide-react';
+import React, { useState } from 'react';
+import { Download, Filter, Search, ShoppingBag, Sprout, Trash2 } from 'lucide-react';
 import { exportToExcel } from '../services/storage';
 import { NEST_TYPES } from '../data/constants';
 
+const today = () => {
+  const date = new Date();
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+};
+const dateLabel = (value) => {
+  const [year, month, day] = String(value || '').split('-');
+  return year && month && day ? `${day}/${month}/${year}` : value;
+};
+const amount = (value) => Number(value || 0).toLocaleString('vi-VN');
+const hasTag = (record, tagId) => String(record.tagIds || '').split(',').includes(tagId);
+
 export default function HistoryTab({
-  houses,
-  harvests,
-  sales,
-  inventoryData,
-  onDeleteHarvest,
-  session,
-  onRequestDelete,
+  houses = [], harvests = [], sales = [], inventoryData, nestTypes = NEST_TYPES, tags = [],
+  session, onRequestDelete,
 }) {
-  const [viewType, setViewType] = useState('harvests'); // 'harvests' | 'sales'
-  const [selectedHouseId, setSelectedHouseId] = useState('all');
-  const [selectedPeriod, setSelectedPeriod] = useState('this_month'); // 'all' | 'today' | '7days' | 'this_month'
-  const [selectedTypeId, setSelectedTypeId] = useState('all');
-  const [searchQuery, setSearchQuery] = useState('');
+  const [currentDate] = useState(today);
+  const [kind, setKind] = useState('harvests');
+  const [period, setPeriod] = useState('this_month');
+  const [month, setMonth] = useState(currentDate.slice(0, 7));
+  const [year, setYear] = useState(currentDate.slice(0, 4));
+  const [fromDate, setFromDate] = useState('');
+  const [toDate, setToDate] = useState('');
+  const [houseId, setHouseId] = useState('all');
+  const [typeId, setTypeId] = useState('all');
+  const [tagId, setTagId] = useState('all');
+  const [paymentStatus, setPaymentStatus] = useState('all');
+  const [query, setQuery] = useState('');
+  const isAdmin = session?.role === 'admin';
 
-  const todayStr = new Date().toISOString().slice(0, 10);
-  const currentMonthStr = todayStr.slice(0, 7);
+  const passesDate = (value) => {
+    const date = String(value || '').slice(0, 10);
+    if (period === 'today') return date === currentDate;
+    if (period === 'this_month') return date.startsWith(currentDate.slice(0, 7));
+    if (period === 'this_year') return date.startsWith(currentDate.slice(0, 4));
+    if (period === 'month') return date.startsWith(month);
+    if (period === 'year') return date.startsWith(year);
+    if (period === 'custom') return (!fromDate || date >= fromDate) && (!toDate || date <= toDate);
+    if (period === '7days') {
+      const cutoff = new Date(`${currentDate}T00:00:00`);
+      cutoff.setDate(cutoff.getDate() - 6);
+      const first = `${cutoff.getFullYear()}-${String(cutoff.getMonth() + 1).padStart(2, '0')}-${String(cutoff.getDate()).padStart(2, '0')}`;
+      return date >= first && date <= currentDate;
+    }
+    return true;
+  };
+  const containsQuery = (record) => {
+    const q = query.trim().toLocaleLowerCase('vi-VN');
+    return !q || [
+      record.houseName, record.typeName, record.productName, record.customerName,
+      record.customerPhone, record.staffName, record.note,
+    ].some((value) => String(value || '').toLocaleLowerCase('vi-VN').includes(q));
+  };
 
-  // Lọc lịch sử thu hoạch
-  const filteredHarvests = useMemo(() => {
-    return harvests.filter((item) => {
-      if (selectedHouseId !== 'all' && item.houseId !== selectedHouseId) return false;
-      if (selectedTypeId !== 'all' && item.typeId !== selectedTypeId) return false;
+  const filteredHarvests = harvests.filter((record) =>
+    passesDate(record.date) &&
+    (houseId === 'all' || record.houseId === houseId) &&
+    (typeId === 'all' || record.typeId === typeId) &&
+    (tagId === 'all' || hasTag(record, tagId)) &&
+    containsQuery(record)
+  );
 
-      // Period filter
-      if (selectedPeriod === 'today' && item.date !== todayStr) return false;
-      if (selectedPeriod === 'this_month' && !item.date.startsWith(currentMonthStr)) return false;
-      if (selectedPeriod === '7days') {
-        const d = new Date(item.date);
-        const diff = (new Date() - d) / (1000 * 60 * 60 * 24);
-        if (diff > 7 || diff < 0) return false;
-      }
+  const filteredSales = sales.filter((record) =>
+    passesDate(record.date) &&
+    (typeId === 'all' || record.inventoryTypeId === typeId || record.typeId === typeId) &&
+    (tagId === 'all' || hasTag(record, tagId)) &&
+    (paymentStatus === 'all' || record.status === paymentStatus) &&
+    containsQuery(record)
+  );
 
-      if (searchQuery.trim()) {
-        const query = searchQuery.toLowerCase();
-        const matchNote = item.note && item.note.toLowerCase().includes(query);
-        const matchStaff = item.staffName && item.staffName.toLowerCase().includes(query);
-        const matchHouse = item.houseName && item.houseName.toLowerCase().includes(query);
-        if (!matchNote && !matchStaff && !matchHouse) return false;
-      }
-      return true;
-    });
-  }, [harvests, selectedHouseId, selectedPeriod, selectedTypeId, searchQuery, todayStr, currentMonthStr]);
-
-  // Lọc lịch sử bán hàng
-  const filteredSales = useMemo(() => {
-    return sales.filter((item) => {
-      if (selectedHouseId !== 'all' && item.houseId !== selectedHouseId) return false;
-      if (selectedTypeId !== 'all' && item.typeId !== selectedTypeId) return false;
-
-      if (selectedPeriod === 'today' && item.date !== todayStr) return false;
-      if (selectedPeriod === 'this_month' && !item.date.startsWith(currentMonthStr)) return false;
-      if (selectedPeriod === '7days') {
-        const d = new Date(item.date);
-        const diff = (new Date() - d) / (1000 * 60 * 60 * 24);
-        if (diff > 7 || diff < 0) return false;
-      }
-
-      if (searchQuery.trim()) {
-        const query = searchQuery.toLowerCase();
-        const matchCust = item.customerName && item.customerName.toLowerCase().includes(query);
-        const matchPhone = item.customerPhone && item.customerPhone.includes(query);
-        const matchHouse = item.houseName && item.houseName.toLowerCase().includes(query);
-        if (!matchCust && !matchPhone && !matchHouse) return false;
-      }
-      return true;
-    });
-  }, [sales, selectedHouseId, selectedPeriod, selectedTypeId, searchQuery, todayStr, currentMonthStr]);
-
-  // Thống kê nhanh
-  const stats = useMemo(() => {
-    const totalHarvestG = filteredHarvests.reduce((sum, i) => sum + Number(i.weight || 0), 0);
-    const totalSalesAmount = filteredSales.reduce((sum, i) => sum + Number(i.totalAmount || 0), 0);
-    const totalSoldG = filteredSales.reduce((sum, i) => sum + Number(i.weight || 0), 0);
-
-    return {
-      totalHarvestG,
-      totalHarvestKg: (totalHarvestG / 1000).toFixed(2),
-      harvestCount: filteredHarvests.length,
-      totalSalesAmount,
-      totalSoldG,
-      salesCount: filteredSales.length,
-    };
-  }, [filteredHarvests, filteredSales]);
+  const records = kind === 'harvests' ? filteredHarvests : filteredSales;
+  const totalWeight = records.reduce((sum, record) => sum + Number(record.weight || 0), 0);
+  const totalAmount = filteredSales.reduce((sum, record) => sum + Number(record.totalAmount || 0), 0);
 
   return (
-    <div className="space-y-5">
-      {/* ─── SWITCHER TAB & FILTERS BAR ────────────────────────────────────── */}
-      <div className="bg-white rounded-3xl p-4 lg:p-5 border border-slate-200/80 shadow-xs space-y-3.5">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          {/* Switcher Tab */}
-          <div className="bg-slate-100 p-1 rounded-2xl flex items-center gap-1 text-xs font-bold w-full sm:w-auto">
-            <button
-              type="button"
-              onClick={() => setViewType('harvests')}
-              className={`flex-1 sm:flex-initial px-4 py-2 rounded-xl transition flex items-center justify-center gap-1.5 cursor-pointer ${
-                viewType === 'harvests'
-                  ? 'bg-emerald-700 text-white shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              <Scale className="w-3.5 h-3.5" />
-              <span>Thu hoạch ({filteredHarvests.length})</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setViewType('sales')}
-              className={`flex-1 sm:flex-initial px-4 py-2 rounded-xl transition flex items-center justify-center gap-1.5 cursor-pointer ${
-                viewType === 'sales'
-                  ? 'bg-emerald-700 text-white shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              <ShoppingBag className="w-3.5 h-3.5" />
-              <span>Bán hàng ({filteredSales.length})</span>
-            </button>
+    <div className="page-enter space-y-5">
+      <section className="surface p-4 sm:p-5">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="inline-flex rounded-2xl bg-[#f1f7f3] p-1">
+            <button type="button" onClick={() => setKind('harvests')} aria-pressed={kind === 'harvests'} className={`flex min-h-11 items-center gap-2 rounded-xl px-3 text-sm font-bold ${kind === 'harvests' ? 'bg-[#075e4b] text-white' : 'text-[#60736d]'}`}><Sprout aria-hidden="true" className="h-4 w-4" /> Thu hoạch</button>
+            <button type="button" onClick={() => setKind('sales')} aria-pressed={kind === 'sales'} className={`flex min-h-11 items-center gap-2 rounded-xl px-3 text-sm font-bold ${kind === 'sales' ? 'bg-[#075e4b] text-white' : 'text-[#60736d]'}`}><ShoppingBag aria-hidden="true" className="h-4 w-4" /> Bán hàng</button>
           </div>
-
-          <button
-            onClick={() => exportToExcel(harvests, sales, inventoryData)}
-            className="self-end sm:self-auto text-xs font-bold text-emerald-800 bg-emerald-50 hover:bg-emerald-100/80 px-3.5 py-2 rounded-xl border border-emerald-200/80 transition flex items-center gap-1.5 cursor-pointer"
-          >
-            <Download className="w-3.5 h-3.5" /> Xuất Báo Cáo Excel
-          </button>
+          {isAdmin && <button type="button" onClick={() => exportToExcel(filteredHarvests, filteredSales, inventoryData)} className="btn-secondary flex items-center gap-2 text-sm"><Download aria-hidden="true" className="h-4 w-4" /> Xuất Excel theo bộ lọc</button>}
         </div>
-
-        {/* Filters Controls */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5 pt-1">
-          {/* Lọc nhà yến */}
-          <div>
-            <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">
-              Nhà yến:
-            </label>
-            <select
-              value={selectedHouseId}
-              onChange={(e) => setSelectedHouseId(e.target.value)}
-              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold text-slate-800 outline-none"
-            >
-              <option value="all">Tất cả nhà yến</option>
-              {houses.map((h) => (
-                <option key={h.id} value={h.id}>
-                  {h.name}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* Lọc thời gian */}
-          <div>
-            <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">
-              Thời gian:
-            </label>
-            <select
-              value={selectedPeriod}
-              onChange={(e) => setSelectedPeriod(e.target.value)}
-              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold text-slate-800 outline-none"
-            >
-              <option value="this_month">Tháng này ({currentMonthStr})</option>
-              <option value="today">Hôm nay</option>
-              <option value="7days">7 ngày gần nhất</option>
-              <option value="all">Toàn bộ thời gian</option>
-            </select>
-          </div>
-
-          {/* Lọc loại tổ */}
-          <div>
-            <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">
-              Phân loại:
-            </label>
-            <select
-              value={selectedTypeId}
-              onChange={(e) => setSelectedTypeId(e.target.value)}
-              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold text-slate-800 outline-none"
-            >
-              <option value="all">Tất cả loại tổ</option>
-              {NEST_TYPES.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.label}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* Ô tìm kiếm */}
-          <div>
-            <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">
-              Tìm kiếm:
-            </label>
-            <div className="relative">
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Tìm ghi chú, tên, SĐT..."
-                className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-8 pr-3 py-2 text-xs text-slate-800 outline-none"
-              />
-              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
-            </div>
-          </div>
+        <div className="mt-4 grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)]">
+          <label><span className="mb-1.5 block text-sm font-semibold text-[#41594d]">Thời gian</span><select className="field" value={period} onChange={(event) => setPeriod(event.target.value)}>
+            <option value="this_month">Tháng này</option><option value="today">Hôm nay</option><option value="7days">7 ngày gần đây</option><option value="this_year">Năm nay</option><option value="month">Chọn tháng</option><option value="year">Chọn năm</option><option value="custom">Khoảng ngày</option><option value="all">Tất cả</option>
+          </select></label>
+          <label className="relative"><span className="mb-1.5 block text-sm font-semibold text-[#41594d]">Tìm kiếm</span><Search aria-hidden="true" className="pointer-events-none absolute bottom-4 left-3 h-4 w-4 text-[#71847a]" /><input className="field pl-9" type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Tên khách, ghi chú, số điện thoại…" /></label>
         </div>
-      </div>
-
-      {/* ─── KPI STATS THEO BỘ LỌC ─────────────────────────────────────────── */}
-      {viewType === 'harvests' ? (
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
-          <div className="bg-white border border-slate-200/80 p-4 rounded-3xl shadow-xs">
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
-              Tổng sản lượng thu
-            </span>
-            <div className="text-xl font-black font-mono text-emerald-800 mt-1 tabular-nums">
-              {stats.totalHarvestG.toLocaleString()} g
-            </div>
-            <span className="text-xs text-slate-500 font-medium">≈ {stats.totalHarvestKg} kg</span>
+        {period === 'month' && <label className="mt-3 block"><span className="mb-1.5 block text-sm font-semibold">Chọn tháng</span><input className="field max-w-xs" type="month" value={month} onChange={(event) => setMonth(event.target.value)} /></label>}
+        {period === 'year' && <label className="mt-3 block"><span className="mb-1.5 block text-sm font-semibold">Chọn năm</span><select className="field max-w-xs" value={year} onChange={(event) => setYear(event.target.value)}>{Array.from({length: 8}, (_, index) => String(Number(currentDate.slice(0, 4)) - index)).map((value) => <option key={value} value={value}>{value}</option>)}</select></label>}
+        {period === 'custom' && <div className="mt-3 grid gap-3 sm:grid-cols-2"><label><span className="mb-1.5 block text-sm font-semibold">Từ ngày</span><input className="field" type="date" value={fromDate} onChange={(event) => setFromDate(event.target.value)} /></label><label><span className="mb-1.5 block text-sm font-semibold">Đến ngày</span><input className="field" type="date" min={fromDate || undefined} value={toDate} onChange={(event) => setToDate(event.target.value)} /></label></div>}
+        <details className="mt-3 rounded-2xl border border-[#e1ebe3] px-3 py-2">
+          <summary className="flex min-h-10 cursor-pointer list-none items-center gap-2 text-sm font-semibold text-[#075e4b]"><Filter aria-hidden="true" className="h-4 w-4" /> Lọc thêm theo loại, nhãn{kind === 'harvests' ? ', nhà yến' : ', thanh toán'}</summary>
+          <div className="grid gap-3 border-t border-[#e1ebe3] pt-3 sm:grid-cols-2 lg:grid-cols-4">
+            {kind === 'harvests' && <label><span className="mb-1.5 block text-sm font-semibold">Nhà yến</span><select className="field" value={houseId} onChange={(event) => setHouseId(event.target.value)}><option value="all">Tất cả nhà</option>{houses.map((house) => <option key={house.id} value={house.id}>{house.name}</option>)}</select></label>}
+            <label><span className="mb-1.5 block text-sm font-semibold">Loại tổ</span><select className="field" value={typeId} onChange={(event) => setTypeId(event.target.value)}><option value="all">Tất cả loại</option>{nestTypes.map((type) => <option key={type.id} value={type.id}>{type.label}</option>)}</select></label>
+            {tags.length > 0 && <label><span className="mb-1.5 block text-sm font-semibold">Nhãn</span><select className="field" value={tagId} onChange={(event) => setTagId(event.target.value)}><option value="all">Tất cả nhãn</option>{tags.map((tag) => <option key={tag.id} value={tag.id}>{tag.name}</option>)}</select></label>}
+            {kind === 'sales' && <label><span className="mb-1.5 block text-sm font-semibold">Thanh toán</span><select className="field" value={paymentStatus} onChange={(event) => setPaymentStatus(event.target.value)}><option value="all">Tất cả</option><option value="paid">Đã thanh toán</option><option value="debt">Ghi nợ</option></select></label>}
           </div>
+        </details>
+      </section>
 
-          <div className="bg-white border border-slate-200/80 p-4 rounded-3xl shadow-xs">
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
-              Tổng số đợt thu
-            </span>
-            <div className="text-xl font-black font-mono text-slate-800 mt-1 tabular-nums">
-              {stats.harvestCount} phiếu
-            </div>
-            <span className="text-xs text-slate-500 font-medium">theo tiêu chí lọc</span>
+      <section className="grid gap-3 sm:grid-cols-3">
+        <div className="surface p-4"><p className="eyebrow">Số phiếu</p><p className="mt-1 font-['Be_Vietnam_Pro'] text-2xl font-extrabold tabular-nums">{records.length}</p></div>
+        <div className="surface p-4"><p className="eyebrow">{kind === 'harvests' ? 'Đã thu' : 'Đã bán'}</p><p className="mt-1 font-['Be_Vietnam_Pro'] text-2xl font-extrabold text-[#075e4b] tabular-nums">{amount(totalWeight)} g</p></div>
+        {kind === 'sales' && isAdmin && <div className="surface p-4"><p className="eyebrow">Giá trị đơn</p><p className="mt-1 font-['Be_Vietnam_Pro'] text-2xl font-extrabold tabular-nums">{amount(totalAmount)} đ</p></div>}
+      </section>
+
+      <section className="surface p-4 sm:p-5">
+        <h2 className="mb-4 text-lg font-extrabold">{kind === 'harvests' ? 'Phiếu thu hoạch' : 'Đơn bán hàng'}</h2>
+        {records.length === 0 ? <p className="rounded-2xl bg-[#f8fbf9] p-8 text-center text-sm text-[#60736d]">Không có dữ liệu khớp bộ lọc này. Hãy đổi thời gian hoặc từ khóa.</p> : (
+          <div className="space-y-2">
+            {[...records].sort((a, b) => String(b.date).localeCompare(String(a.date))).map((record) => <article key={record.id} className="flex items-start justify-between gap-3 rounded-2xl border border-[#e1ebe3] bg-[#fbfdfb] p-3.5">
+              <div className="min-w-0"><p className="text-sm font-bold">{kind === 'harvests' ? (record.houseName || 'Nhà yến') : (record.customerName || 'Khách lẻ')}</p><p className="mt-1 text-xs text-[#60736d]">{dateLabel(record.date)} · {record.productName || record.typeName || 'Chưa phân loại'}</p>{record.note && <p className="mt-1 truncate text-xs text-[#71847a]">{record.note}</p>}{kind === 'sales' && <span className={`mt-2 inline-block rounded-full px-2 py-0.5 text-[11px] font-bold ${record.status === 'paid' ? 'bg-[#e7f5eb] text-[#075e4b]' : 'bg-amber-100 text-amber-900'}`}>{record.status === 'paid' ? 'Đã thanh toán' : 'Ghi nợ'}</span>}</div>
+              <div className="flex shrink-0 items-center gap-1"><div className="text-right"><strong className="font-['Be_Vietnam_Pro'] text-sm text-[#075e4b] tabular-nums">{kind === 'harvests' ? '+' : ''}{amount(record.weight)} g</strong>{kind === 'sales' && isAdmin && <p className="text-xs font-semibold text-[#60736d] tabular-nums">{amount(record.totalAmount)} đ</p>}</div>{isAdmin && <button type="button" onClick={() => onRequestDelete?.(kind === 'harvests' ? 'harvest' : 'sale', record)} aria-label={`Xóa ${kind === 'harvests' ? 'phiếu thu' : 'đơn bán'} ngày ${dateLabel(record.date)}`} className="flex h-10 w-10 items-center justify-center rounded-xl text-[#b44545] hover:bg-red-50"><Trash2 aria-hidden="true" className="h-4 w-4" /></button>}</div>
+            </article>)}
           </div>
-
-          <div className="bg-white border border-slate-200/80 p-4 rounded-3xl shadow-xs">
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
-              Bình quân / đợt
-            </span>
-            <div className="text-xl font-black font-mono text-slate-800 mt-1 tabular-nums">
-              {stats.harvestCount > 0 ? Math.round(stats.totalHarvestG / stats.harvestCount) : 0} g
-            </div>
-            <span className="text-xs text-slate-500 font-medium">năng suất trung bình</span>
-          </div>
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
-          <div className="bg-white border border-slate-200/80 p-4 rounded-3xl shadow-xs">
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
-              Tổng doanh thu bán
-            </span>
-            <div className="text-xl font-black font-mono text-slate-900 mt-1 tabular-nums">
-              {stats.totalSalesAmount.toLocaleString('vi-VN')} đ
-            </div>
-            <span className="text-xs text-slate-500 font-medium">{stats.salesCount} đơn bán</span>
-          </div>
-
-          <div className="bg-white border border-slate-200/80 p-4 rounded-3xl shadow-xs">
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
-              Tổng khối lượng xuất
-            </span>
-            <div className="text-xl font-black font-mono text-blue-700 mt-1 tabular-nums">
-              {stats.totalSoldG.toLocaleString()} g
-            </div>
-            <span className="text-xs text-slate-500 font-medium">≈ {(stats.totalSoldG / 1000).toFixed(2)} kg</span>
-          </div>
-
-          <div className="bg-white border border-slate-200/80 p-4 rounded-3xl shadow-xs">
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
-              Số lượng đơn hàng
-            </span>
-            <div className="text-xl font-black font-mono text-slate-800 mt-1 tabular-nums">
-              {stats.salesCount} đơn
-            </div>
-            <span className="text-xs text-slate-500 font-medium">hoàn thành</span>
-          </div>
-        </div>
-      )}
-
-      {/* ─── DATA TABLE / CARD LIST ────────────────────────────────────────── */}
-      <div className="bg-white rounded-3xl p-5 border border-slate-200/80 shadow-xs space-y-3">
-        <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700">
-          {viewType === 'harvests' ? 'Chi tiết các phiếu thu hoạch' : 'Chi tiết các đơn xuất bán'}
-        </h3>
-
-        {viewType === 'harvests' ? (
-          filteredHarvests.length === 0 ? (
-            <div className="text-center py-12 text-slate-400 text-xs">
-              Không có phiếu thu nào khớp với bộ lọc.
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {filteredHarvests.map((item) => (
-                <div
-                  key={item.id}
-                  className="p-3.5 bg-slate-50/80 hover:bg-slate-100/70 rounded-2xl border border-slate-200/60 flex items-center justify-between transition"
-                >
-                  <div className="min-w-0 pr-2">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-xs font-bold text-slate-900">{item.date}</span>
-                      <span className="text-[10px] text-slate-700 bg-slate-200/80 px-2 py-0.5 rounded-md font-semibold">
-                        {item.houseName}
-                      </span>
-                      {item.shift && (
-                        <span className="text-[10px] text-slate-500 bg-white border border-slate-200 px-1.5 py-0.2 rounded">
-                          {item.shift}
-                        </span>
-                      )}
-                    </div>
-                    <div className="text-xs text-slate-500 mt-1">
-                      <strong className="text-emerald-800 font-semibold">{item.typeName}</strong>
-                      {item.staffName && <span> • Người nhập: {item.staffName}</span>}
-                      {item.note && <span className="italic text-slate-400"> • "{item.note}"</span>}
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-3 shrink-0">
-                    <div className="text-right">
-                      <div className="text-base font-black font-mono text-emerald-700 tabular-nums">
-                        +{item.weight.toLocaleString()}g
-                      </div>
-                      <div className="text-xs text-slate-400 font-mono">
-                        {(item.weight / 1000).toFixed(2)} kg
-                      </div>
-                    </div>
-                    <button
-                      onClick={() => {
-                        if (onRequestDelete) {
-                          onRequestDelete('harvest', item);
-                        } else {
-                          onDeleteHarvest(item.id);
-                        }
-                      }}
-                      className="p-2 text-slate-300 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition cursor-pointer"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )
-        ) : (
-          filteredSales.length === 0 ? (
-            <div className="text-center py-12 text-slate-400 text-xs">
-              Không có đơn bán nào khớp với bộ lọc.
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {filteredSales.map((item) => (
-                <div
-                  key={item.id}
-                  className="p-3.5 bg-slate-50/80 hover:bg-slate-100/70 rounded-2xl border border-slate-200/60 flex items-center justify-between transition"
-                >
-                  <div className="min-w-0 pr-2">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-sm font-bold text-slate-900">{item.customerName}</span>
-                      <span
-                        className={`text-[9px] font-bold px-2 py-0.5 rounded-full border ${
-                          item.status === 'paid'
-                            ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
-                            : 'bg-amber-50 text-amber-800 border-amber-200'
-                        }`}
-                      >
-                        {item.status === 'paid' ? 'Đã thanh toán' : 'Ghi nợ'}
-                      </span>
-                    </div>
-                    <div className="text-xs text-slate-500 mt-1">
-                      {item.date} • Xuất: <strong>{item.houseName}</strong> • {item.typeName}
-                      {item.customerPhone && <span> • SĐT: {item.customerPhone}</span>}
-                    </div>
-                  </div>
-
-                  <div className="text-right shrink-0">
-                    <div className="text-base font-black font-mono text-slate-900 tabular-nums">
-                      {(item.totalAmount || 0).toLocaleString('vi-VN')} đ
-                    </div>
-                    <div className="text-xs text-slate-400 font-mono">
-                      {item.weight}g
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )
         )}
-      </div>
+      </section>
     </div>
   );
 }

@@ -1,5 +1,5 @@
 import React from 'react';
-import { AlertTriangle, Trash2, Check, X } from 'lucide-react';
+import { AlertTriangle, Trash2, Check } from 'lucide-react';
 
 export default function ConfirmModal({
   isOpen,

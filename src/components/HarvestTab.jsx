@@ -1,338 +1,194 @@
-import React, { useState } from 'react';
-import confetti from 'canvas-confetti';
-import { Calendar, Tag, Clock, FileText, Check, Trash2, ArrowUpRight, Scale, Sparkles, Plus, History } from 'lucide-react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Check, ChevronDown, ClipboardList, Leaf, Plus, Scale, Trash2 } from 'lucide-react';
 import { NEST_TYPES, SHIFTS } from '../data/constants';
 
+const DRAFT_KEY = 'minhtrieu_harvest_draft';
+const today = () => {
+  const date = new Date();
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+};
+const readDraft = () => {
+  try { return JSON.parse(localStorage.getItem(DRAFT_KEY) || '{}'); } catch { return {}; }
+};
+const formatDate = (value) => {
+  const [year, month, day] = String(value || '').split('-');
+  return year && month && day ? `${day}/${month}/${year}` : value;
+};
+
 export default function HarvestTab({
-  activeHouse,
-  session,
-  harvests,
-  onAddHarvest,
-  onDeleteHarvest,
-  onNavigateToHistory,
-  onRequestDelete,
+  activeHouse, houses = [], onSelectHouse, session, harvests = [], nestTypes = NEST_TYPES, tags = [],
+  onAddHarvest, onNavigateToHistory, onRequestDelete,
 }) {
-  const todayStr = new Date().toISOString().slice(0, 10);
-  const [date, setDate] = useState(todayStr);
-  const [weight, setWeight] = useState(1140);
-  const [selectedType, setSelectedType] = useState(NEST_TYPES[0]);
-  const [selectedShift, setSelectedShift] = useState(SHIFTS[0].label);
-  const [note, setNote] = useState('');
-  const [savedSuccess, setSavedSuccess] = useState(false);
+  const [draft] = useState(readDraft);
+  const [date, setDate] = useState(draft.date || today());
+  const [weight, setWeight] = useState(draft.weight || '');
+  const [typeId, setTypeId] = useState(draft.typeId || nestTypes[0]?.id || NEST_TYPES[0].id);
+  const [shift, setShift] = useState(draft.shift || SHIFTS[0].label);
+  const [note, setNote] = useState(draft.note || '');
+  const [tagIds, setTagIds] = useState(draft.tagIds || '');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
 
-  const kgValue = ((Number(weight) || 0) / 1000).toFixed(2);
+  const activeTypes = useMemo(() => nestTypes.filter((type) => type.isActive !== false), [nestTypes]);
+  const selectedType = nestTypes.find((type) => type.id === typeId) || activeTypes[0] || NEST_TYPES[0];
+  const activeTags = tags.filter((tag) => tag.isActive !== false);
+  const houseHarvests = useMemo(() => harvests.filter((item) => item.houseId === activeHouse?.id), [harvests, activeHouse]);
+  const todayWeight = houseHarvests.filter((item) => item.date === date).reduce((sum, item) => sum + Number(item.weight || 0), 0);
 
-  // Tính tổng thu hôm nay của nhà yến này
-  const todayTotalWeight = harvests
-    .filter((h) => h.houseId === activeHouse?.id && h.date === (date || todayStr))
-    .reduce((sum, h) => sum + Number(h.weight || 0), 0);
+  useEffect(() => {
+    localStorage.setItem(DRAFT_KEY, JSON.stringify({ date, weight, typeId, shift, note, tagIds }));
+  }, [date, weight, typeId, shift, note, tagIds]);
 
-  // Toàn bộ đợt thu của nhà này
-  const houseHarvests = harvests.filter((h) => h.houseId === activeHouse?.id);
-
-  const handleAdjustWeight = (delta) => {
-    const current = Number(weight) || 0;
-    const next = Math.max(0, current + delta);
-    setWeight(next);
-  };
-
-  const handleResetWeight = () => {
-    setWeight('');
-  };
-
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    if (!weight || Number(weight) <= 0) {
-      alert('Vui lòng nhập khối lượng thu hoạch!');
-      return;
+  useEffect(() => {
+    if (!nestTypes.some((item) => item.id === typeId && item.isActive !== false) && activeTypes.length) {
+      setTypeId(activeTypes[0].id);
     }
+  }, [nestTypes, activeTypes, typeId]);
 
-    const newRecord = {
-      id: 'harv_' + Date.now(),
-      houseId: activeHouse.id,
-      houseName: activeHouse.name,
-      date: date || todayStr,
-      weight: Number(weight),
-      typeId: selectedType.id,
-      typeName: selectedType.label,
-      shift: selectedShift,
-      note: note.trim(),
-      staffName: session?.name || 'Nhân viên',
-      createdAt: new Date().toISOString(),
-    };
+  const addWeight = (grams) => setWeight(String(Math.max(0, Number(weight || 0) + grams)));
 
-    onAddHarvest(newRecord);
-
-    confetti({
-      particleCount: 40,
-      spread: 60,
-      origin: { y: 0.8 },
-      colors: ['#047857', '#059669', '#10b981'],
-    });
-
-    setSavedSuccess(true);
-    setTimeout(() => setSavedSuccess(false), 2500);
+  const submit = async (event) => {
+    event.preventDefault();
+    setError('');
+    setSuccess('');
+    const grams = Number(weight);
+    if (!activeHouse?.id) { setError('Bạn cần chọn nhà yến trước khi lưu.'); return; }
+    if (!Number.isFinite(grams) || grams <= 0) { setError('Nhập khối lượng lớn hơn 0 gram.'); return; }
+    setSaving(true);
+    try {
+      const record = {
+        id: `harv_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+        houseId: activeHouse.id,
+        houseName: activeHouse.name,
+        date,
+        weight: grams,
+        typeId: selectedType.id,
+        typeName: selectedType.label,
+        shift,
+        note: note.trim(),
+        tagIds,
+        staffName: session?.name || 'Người nhập',
+        createdAt: new Date().toISOString(),
+      };
+      await onAddHarvest(record);
+      setWeight('');
+      setNote('');
+      setTagIds('');
+      setSuccess(`Đã lưu ${grams.toLocaleString('vi-VN')} g vào Google Sheet.`);
+    } catch (err) {
+      setError(err.message || 'Chưa thể lưu phiếu. Kiểm tra kết nối rồi thử lại.');
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
-    <div className="space-y-4 md:space-y-6">
-      {/* Toast thông báo lưu thành công */}
-      {savedSuccess && (
-        <div className="bg-emerald-700 text-white px-4 py-3 rounded-2xl text-xs font-semibold flex items-center justify-between shadow-md animate-in fade-in slide-in-from-top-2 duration-150">
-          <div className="flex items-center gap-2">
-            <Check className="w-4 h-4 stroke-[2.5]" />
-            <span>Đã ghi nhận +{weight}g vào Google Sheet thành công!</span>
+    <div className="page-enter grid gap-5 xl:grid-cols-[minmax(0,1.28fr)_minmax(310px,.72fr)]">
+      <form onSubmit={submit} className="surface p-4 sm:p-6">
+        <div className="mb-5 flex items-start justify-between gap-3">
+          <div>
+            <p className="eyebrow mb-1">Ghi sản lượng</p>
+            <h2 className="text-xl font-extrabold text-[#18312d]">Thêm phiếu thu hoạch</h2>
           </div>
-          <button
-            onClick={() => onNavigateToHistory()}
-            className="text-xs text-emerald-100 hover:text-white underline font-semibold cursor-pointer"
-          >
-            Xem lịch sử
-          </button>
+          <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#e7f5eb] text-[#075e4b]"><Leaf aria-hidden="true" className="h-5 w-5" /></div>
         </div>
-      )}
 
-      {/* Grid 2 Cột trên Desktop, 1 Cột trên Mobile */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 lg:gap-6">
-        {/* ─── CỘT TRÁI: FORM NHẬP LIỆU THU HOẠCH (lg:col-span-7) ─────────── */}
-        <div className="lg:col-span-7 space-y-4">
-          <form onSubmit={handleSubmit} className="bg-white rounded-3xl p-5 md:p-6 border border-slate-200/80 shadow-xs space-y-4">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-xl bg-emerald-100 text-emerald-800 flex items-center justify-center font-bold text-xs">
-                  <Scale className="w-4 h-4" />
-                </div>
-                <div>
-                  <h3 className="text-sm font-bold text-slate-800">Phiếu nhập thu hoạch</h3>
-                  <p className="text-[11px] text-slate-400">Ghi nhận số lượng thu tổ mới</p>
-                </div>
-              </div>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <label className="block">
+            <span className="mb-1.5 block text-sm font-semibold text-[#41594d]">Nhà yến thu hoạch</span>
+            <select className="field" value={activeHouse?.id || ''} onChange={(event) => onSelectHouse?.(houses.find((house) => house.id === event.target.value))} required>
+              {houses.map((house) => <option key={house.id} value={house.id}>{house.name}</option>)}
+            </select>
+          </label>
+          <label className="block">
+            <span className="mb-1.5 block text-sm font-semibold text-[#41594d]">Ngày thu</span>
+            <input className="field" type="date" value={date} onChange={(event) => setDate(event.target.value)} required />
+          </label>
+        </div>
 
-              {/* Ngày thu */}
-              <div className="flex items-center gap-1.5">
-                <Calendar className="w-3.5 h-3.5 text-slate-400" />
-                <input
-                  type="date"
-                  value={date}
-                  onChange={(e) => setDate(e.target.value)}
-                  className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-semibold text-slate-800 outline-none focus:border-emerald-600 cursor-pointer"
-                />
-              </div>
-            </div>
+        <div className="surface-soft mt-4 p-4 text-center sm:p-5">
+          <label htmlFor="harvest-weight" className="eyebrow block">Khối lượng vừa thu</label>
+          <div className="mt-2 flex items-baseline justify-center gap-2">
+            <input
+              id="harvest-weight" type="number" inputMode="numeric" min="1" step="1"
+              className="w-[min(60vw,260px)] border-0 bg-transparent text-center font-['Be_Vietnam_Pro'] text-[clamp(2.7rem,12vw,4.25rem)] font-extrabold tracking-[-.07em] text-[#075e4b] outline-none placeholder:text-[#a7c9b4] focus:ring-0"
+              value={weight} onChange={(event) => setWeight(event.target.value)} placeholder="0" aria-describedby="harvest-weight-help"
+            />
+            <span className="text-base font-bold text-[#60736d]">g</span>
+          </div>
+          <p id="harvest-weight-help" className="mb-4 text-sm text-[#71847a]">{Number(weight) > 0 ? `≈ ${(Number(weight) / 1000).toLocaleString('vi-VN', { maximumFractionDigits: 2 })} kg` : 'Nhập gram hoặc chọn mức cộng nhanh'}</p>
+          <div className="grid grid-cols-4 gap-2">
+            {[50, 100, 500, 1000].map((grams) => (
+              <button key={grams} type="button" onClick={() => addWeight(grams)} className="btn-secondary min-h-11 px-1 text-[13px] sm:text-sm" aria-label={`Cộng ${grams} gram`}>+{grams === 1000 ? '1 kg' : `${grams} g`}</button>
+            ))}
+          </div>
+        </div>
 
-            {/* Khối Hero Numpad */}
-            <div className="bg-slate-50/90 rounded-2xl p-4 md:p-5 border border-slate-200/70 text-center space-y-2.5">
-              <label className="text-[11px] font-bold uppercase tracking-wider text-slate-400 block">
-                Khối lượng tổ thu được
-              </label>
-
-              <div className="flex items-baseline justify-center gap-2 py-1">
-                <input
-                  type="number"
-                  value={weight}
-                  onChange={(e) => setWeight(e.target.value === '' ? '' : Number(e.target.value))}
-                  placeholder="0"
-                  className="text-4xl md:text-5xl font-black text-emerald-800 font-mono text-center w-56 bg-transparent outline-none tabular-nums tracking-tight"
-                />
-                <span className="text-base font-bold text-slate-400 font-mono">gram</span>
-              </div>
-
-              <div className="text-xs font-mono text-slate-500 font-medium">
-                Quy đổi: <strong className="text-slate-800 font-bold text-sm">{kgValue}</strong> kg
-              </div>
-
-              {/* Quick Adjust Buttons */}
-              <div className="grid grid-cols-5 gap-1.5 pt-1 max-w-md mx-auto">
-                {[50, 100, 500, 1000].map((step) => (
-                  <button
-                    type="button"
-                    key={step}
-                    onClick={() => handleAdjustWeight(step)}
-                    className="py-2 bg-white hover:bg-emerald-50 active:bg-emerald-100 border border-slate-200/80 hover:border-emerald-300 rounded-xl text-xs font-mono font-bold text-slate-700 hover:text-emerald-800 transition cursor-pointer shadow-2xs"
-                  >
-                    +{step >= 1000 ? `${step / 1000}kg` : `${step}g`}
-                  </button>
-                ))}
-                <button
-                  type="button"
-                  onClick={handleResetWeight}
-                  className="py-2 bg-rose-50 hover:bg-rose-100 active:bg-rose-200 border border-rose-200 rounded-xl text-xs font-bold text-rose-700 transition cursor-pointer shadow-2xs"
-                >
-                  Xóa
+        <fieldset className="mt-5">
+          <legend className="mb-2 text-sm font-bold text-[#41594d]">Loại tổ</legend>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+            {activeTypes.map((type) => {
+              const selected = selectedType.id === type.id;
+              return (
+                <button type="button" key={type.id} onClick={() => setTypeId(type.id)} aria-pressed={selected} className={`flex min-h-12 items-center justify-between gap-2 rounded-2xl border px-3 text-left text-sm font-semibold transition-colors ${selected ? 'border-[#075e4b] bg-[#e7f5eb] text-[#075e4b]' : 'border-[#dce8e1] bg-white text-[#52665d] hover:bg-[#f7faf8]'}`}>
+                  <span>{type.shortLabel || type.label}</span>
+                  {selected && <Check aria-hidden="true" className="h-4 w-4 shrink-0" />}
                 </button>
-              </div>
-            </div>
-
-            {/* Phân loại tổ */}
-            <div className="space-y-1.5">
-              <label className="text-[11px] font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1">
-                <Tag className="w-3 h-3 text-slate-400" /> Loại tổ thu hoạch
-              </label>
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                {NEST_TYPES.map((type) => {
-                  const isSelected = selectedType.id === type.id;
-                  return (
-                    <button
-                      type="button"
-                      key={type.id}
-                      onClick={() => setSelectedType(type)}
-                      className={`px-3 py-2.5 rounded-xl text-left text-xs transition border flex items-center justify-between cursor-pointer ${
-                        isSelected
-                          ? 'bg-emerald-700 text-white font-semibold border-emerald-700 shadow-sm'
-                          : 'bg-slate-50 hover:bg-slate-100 text-slate-700 font-medium border-slate-200/80'
-                      }`}
-                    >
-                      <span className="truncate">{type.label}</span>
-                      {isSelected && <Check className="w-3.5 h-3.5 stroke-[2.5] shrink-0" />}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Ca thu & Ghi chú */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
-              <div>
-                <label className="text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1 flex items-center gap-1">
-                  <Clock className="w-3 h-3 text-slate-400" /> Ca thu
-                </label>
-                <select
-                  value={selectedShift}
-                  onChange={(e) => setSelectedShift(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold text-slate-700 outline-none cursor-pointer"
-                >
-                  {SHIFTS.map((s) => (
-                    <option key={s.id} value={s.label}>
-                      {s.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1 flex items-center gap-1">
-                  <FileText className="w-3 h-3 text-slate-400" /> Ghi chú
-                </label>
-                <input
-                  type="text"
-                  value={note}
-                  onChange={(e) => setNote(e.target.value)}
-                  placeholder="VD: Thu tầng 2, tổ trắng đẹp..."
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-medium text-slate-700 outline-none"
-                />
-              </div>
-            </div>
-
-            {/* Nút Submit */}
-            <button
-              type="submit"
-              className="w-full py-3.5 bg-emerald-700 hover:bg-emerald-600 active:scale-[0.99] text-white font-bold rounded-2xl shadow-md shadow-emerald-700/20 transition flex items-center justify-center gap-2 text-sm cursor-pointer"
-            >
-              <Plus className="w-4 h-4 stroke-[2.5]" />
-              <span>Lưu phiếu thu (+{weight || 0}g)</span>
-              <span className="text-emerald-200 text-xs font-normal">[{activeHouse?.name}]</span>
-            </button>
-          </form>
-        </div>
-
-        {/* ─── CỘT PHẢI: TỔNG QUAN HÔM NAY & LỊCH SỬ GẦN ĐÂY (lg:col-span-5) ─ */}
-        <div className="lg:col-span-5 space-y-4">
-          {/* Card Thống kê sản lượng hôm nay */}
-          <div className="bg-gradient-to-br from-emerald-800 to-emerald-700 rounded-3xl p-5 text-white shadow-md space-y-3">
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] uppercase font-bold text-emerald-200 tracking-wider flex items-center gap-1.5">
-                <Sparkles className="w-3.5 h-3.5 text-amber-300" /> Sản lượng ngày {date || todayStr}
-              </span>
-              <span className="text-xs bg-emerald-900/50 px-2.5 py-0.5 rounded-full border border-emerald-500/30 text-emerald-200">
-                {activeHouse?.name}
-              </span>
-            </div>
-
-            <div className="pt-1">
-              <div className="text-3xl lg:text-4xl font-black font-mono tracking-tight tabular-nums">
-                {todayTotalWeight.toLocaleString()}g
-              </div>
-              <div className="text-xs text-emerald-200 font-mono mt-0.5">
-                ≈ <strong className="text-white">{(todayTotalWeight / 1000).toFixed(2)}</strong> kg thu hoạch
-              </div>
-            </div>
-
-            <div className="pt-2 border-t border-emerald-600/60 flex items-center justify-between text-xs text-emerald-100">
-              <span>Đợt thu cơ sở này:</span>
-              <span className="font-bold text-white font-mono">{houseHarvests.length} phiếu</span>
-            </div>
+              );
+            })}
           </div>
+        </fieldset>
 
-          {/* Danh sách các phiếu vừa nhập */}
-          <div className="bg-white rounded-3xl p-5 border border-slate-200/80 shadow-xs space-y-3">
-            <div className="flex justify-between items-center">
-              <div className="flex items-center gap-2">
-                <History className="w-4 h-4 text-slate-400" />
-                <h4 className="text-xs font-bold uppercase tracking-wider text-slate-700">
-                  Phiếu thu gần đây
-                </h4>
-              </div>
-              <button
-                onClick={onNavigateToHistory}
-                className="text-xs font-semibold text-emerald-700 hover:text-emerald-800 flex items-center gap-0.5 cursor-pointer"
-              >
-                Xem tất cả <ArrowUpRight className="w-3.5 h-3.5" />
-              </button>
-            </div>
-
-            {houseHarvests.length === 0 ? (
-              <div className="text-center py-8 text-slate-400 text-xs">
-                Chưa có phiếu thu nào cho cơ sở này.
-              </div>
-            ) : (
-              <div className="space-y-2 max-h-[380px] overflow-y-auto pr-1">
-                {houseHarvests.slice(0, 6).map((item) => (
-                  <div
-                    key={item.id}
-                    className="p-3 bg-slate-50/80 hover:bg-slate-100/70 rounded-2xl border border-slate-200/60 flex items-center justify-between transition"
-                  >
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs font-bold text-slate-900">{item.date}</span>
-                        <span className="text-[10px] text-slate-600 bg-slate-200/80 px-1.5 py-0.2 rounded font-medium">
-                          {item.shift}
-                        </span>
-                      </div>
-                      <div className="text-[11px] text-slate-500 mt-0.5">
-                        <span className="font-semibold text-emerald-800">{item.typeName}</span>
-                        {item.note && <span className="italic text-slate-400"> • "{item.note}"</span>}
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                      <div className="text-right">
-                        <div className="text-sm font-black font-mono text-emerald-700 tabular-nums">
-                          +{item.weight.toLocaleString()}g
-                        </div>
-                        <div className="text-[10px] text-slate-400 font-mono">
-                          {(item.weight / 1000).toFixed(2)} kg
-                        </div>
-                      </div>
-                      <button
-                        onClick={() => {
-                          if (onRequestDelete) {
-                            onRequestDelete('harvest', item);
-                          } else {
-                            onDeleteHarvest(item.id);
-                          }
-                        }}
-                        className="p-1.5 text-slate-300 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition cursor-pointer"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
+        <details className="mt-5 rounded-2xl border border-[#e1ebe3] bg-[#fbfdfb] px-4 py-3">
+          <summary className="flex min-h-8 cursor-pointer list-none items-center justify-between text-sm font-semibold text-[#41594d]">Thêm ca thu, tag và ghi chú <ChevronDown aria-hidden="true" className="h-4 w-4" /></summary>
+          <div className="mt-4 grid gap-3 border-t border-[#e1ebe3] pt-4">
+            <label className="block"><span className="mb-1.5 block text-sm font-semibold">Ca thu</span><select className="field" value={shift} onChange={(event) => setShift(event.target.value)}>{SHIFTS.map((item) => <option key={item.id} value={item.label}>{item.label}</option>)}</select></label>
+            {activeTags.length > 0 && <fieldset><legend className="mb-1.5 text-sm font-semibold">Tag</legend><div className="flex flex-wrap gap-2">{activeTags.map((tag) => {
+              const chosen = tagIds.split(',').filter(Boolean).includes(tag.id);
+              return <button key={tag.id} type="button" aria-pressed={chosen} onClick={() => setTagIds((current) => {
+                const ids = current.split(',').filter(Boolean);
+                return (chosen ? ids.filter((id) => id !== tag.id) : [...ids, tag.id]).join(',');
+              })} className={`min-h-11 rounded-xl border px-3 text-sm font-semibold ${chosen ? 'border-[#075e4b] bg-[#e7f5eb] text-[#075e4b]' : 'border-[#dce8e1] bg-white text-[#52665d]'}`}>{tag.name}</button>;
+            })}</div></fieldset>}
+            <label className="block"><span className="mb-1.5 block text-sm font-semibold">Ghi chú</span><input className="field" type="text" value={note} onChange={(event) => setNote(event.target.value)} placeholder="Ví dụ: Thu tầng 2" /></label>
           </div>
-        </div>
-      </div>
+        </details>
+
+        {error && <p role="alert" className="mt-4 rounded-xl bg-red-50 p-3 text-sm font-semibold text-[#a63434]">{error}</p>}
+        {success && <p role="status" className="mt-4 flex items-center gap-2 rounded-xl bg-[#e6f3eb] p-3 text-sm font-semibold text-[#075e4b]"><Check aria-hidden="true" className="h-4 w-4" />{success}</p>}
+
+        <button type="submit" disabled={saving || !activeHouse} className="btn-primary mt-5 flex w-full items-center justify-center gap-2">
+          {saving ? <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/50 border-t-white" /> : <Plus aria-hidden="true" className="h-5 w-5" />}
+          {saving ? 'Đang lưu vào Sheet…' : 'Lưu phiếu thu hoạch'}
+        </button>
+        <p className="mt-2 text-center text-xs text-[#71847a]">Nội dung đang nhập được giữ lại trên thiết bị này.</p>
+      </form>
+
+      <aside className="space-y-4">
+        <section className="rounded-[24px] bg-[#075e4b] p-5 text-white">
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-semibold text-[#c8e9d3]">Đã thu ngày {formatDate(date)}</span>
+            <Scale aria-hidden="true" className="h-5 w-5 text-[#c8e9d3]" />
+          </div>
+          <div className="mt-3 font-['Be_Vietnam_Pro'] text-[2.35rem] font-extrabold leading-none tracking-tight tabular-nums">{todayWeight.toLocaleString('vi-VN')} <span className="text-lg font-semibold">g</span></div>
+          <p className="mt-2 text-sm text-[#c8e9d3]">{activeHouse?.name || 'Chưa chọn nhà yến'}</p>
+        </section>
+        <section className="surface p-4 sm:p-5">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <h3 className="flex items-center gap-2 text-base font-extrabold"><ClipboardList aria-hidden="true" className="h-5 w-5 text-[#075e4b]" /> Phiếu gần đây</h3>
+            <button type="button" onClick={onNavigateToHistory} className="min-h-11 text-sm font-bold text-[#075e4b]">Xem tất cả</button>
+          </div>
+          {houseHarvests.length === 0 ? <p className="rounded-2xl bg-[#f7faf8] p-5 text-center text-sm text-[#60736d]">Nhà yến này chưa có phiếu thu.</p> : (
+            <div className="space-y-2">
+              {houseHarvests.slice(0, 5).map((item) => <div key={item.id} className="flex items-center justify-between gap-3 rounded-2xl border border-[#e2ebe5] bg-[#fbfdfb] p-3">
+                <div className="min-w-0"><p className="truncate text-sm font-bold">{item.typeName}</p><p className="text-xs text-[#71847a]">{formatDate(item.date)}{item.shift ? ` · ${item.shift}` : ''}</p></div>
+                <div className="flex shrink-0 items-center gap-1"><span className="font-['Be_Vietnam_Pro'] text-sm font-extrabold text-[#075e4b] tabular-nums">+{Number(item.weight || 0).toLocaleString('vi-VN')} g</span>{session?.canDeleteRecords && <button type="button" aria-label={`Xóa phiếu ${formatDate(item.date)}`} onClick={() => onRequestDelete?.('harvest', item)} className="flex h-10 w-10 items-center justify-center rounded-xl text-[#a25757] hover:bg-red-50"><Trash2 aria-hidden="true" className="h-4 w-4" /></button>}</div>
+              </div>)}
+            </div>
+          )}
+        </section>
+      </aside>
     </div>
   );
 }

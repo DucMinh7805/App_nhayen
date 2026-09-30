@@ -1,485 +1,244 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import LoginScreen from './components/LoginScreen';
 import Header from './components/Header';
 import DesktopSidebar from './components/DesktopSidebar';
-import HarvestTab from './components/HarvestTab';
-import HistoryTab from './components/HistoryTab';
-import InventoryTab from './components/InventoryTab';
-import SalesTab from './components/SalesTab';
-import HousesTab from './components/HousesTab';
-import UserManageTab from './components/UserManageTab';
 import BottomNav from './components/BottomNav';
+import DashboardTab from './components/DashboardTab';
+import HarvestTab from './components/HarvestTab';
+import SalesTab from './components/SalesTab';
+import InventoryTab from './components/InventoryTab';
+import HistoryTab from './components/HistoryTab';
+import HousesTab from './components/HousesTab';
+import SettingsTab from './components/SettingsTab';
+import UserManageTab from './components/UserManageTab';
 import Toast from './components/Toast';
 import ConfirmModal from './components/ConfirmModal';
-
 import {
-  fetchAllData,
-  getHouses,
-  saveHouses,
-  addHarvest,
-  deleteHarvest,
-  addSale,
-  deleteSale,
-  updateSaleStatus,
-  loginUser,
+  fetchAllData, addHarvest, deleteHarvest, addSale, deleteSale,
+  updateSaleStatus, saveHouses, saveConfiguration,
 } from './services/api';
-import { calculateInventory, exportToExcel } from './services/storage';
+import { calculateInventory } from './services/storage';
 import { getSession, canAccessHouse, logout } from './services/auth';
-import { DEFAULT_HOUSES, INITIAL_HARVESTS, INITIAL_SALES } from './data/constants';
+import { NEST_TYPES } from './data/constants';
+
+const DEFAULT_APP_NAME = 'Quản lý Yến sào Minh Triều';
 
 export default function App() {
-  // ─── AUTH STATE ───────────────────────────────────────────────────────────
   const [session, setSession] = useState(() => getSession());
-
-  // ─── DATA STATE ───────────────────────────────────────────────────────────
-  const [houses, setHouses] = useState(DEFAULT_HOUSES);
-  const [harvests, setHarvests] = useState(INITIAL_HARVESTS);
-  const [sales, setSales] = useState(INITIAL_SALES);
-  const [activeHouse, setActiveHouse] = useState(DEFAULT_HOUSES[0]);
-  const [activeTab, setActiveTab] = useState('harvest');
-
-  // ─── UI FEEDBACK STATE (TOAST & MODAL) ────────────────────────────────────
+  const [houses, setHouses] = useState([]);
+  const [harvests, setHarvests] = useState([]);
+  const [sales, setSales] = useState([]);
+  const [nestTypes, setNestTypes] = useState(NEST_TYPES);
+  const [products, setProducts] = useState([]);
+  const [tags, setTags] = useState([]);
+  const [settings, setSettings] = useState({});
+  const [activeHouseId, setActiveHouseId] = useState('');
+  const [activeTab, setActiveTab] = useState(() => getSession()?.role === 'admin' ? 'dashboard' : 'harvest');
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [syncStatus, setSyncStatus] = useState('loading');
+  const [lastSyncedAt, setLastSyncedAt] = useState(null);
   const [toast, setToast] = useState(null);
   const [confirmModal, setConfirmModal] = useState({ isOpen: false });
+  const [isDeleting, setIsDeleting] = useState(false);
+  const loadingData = useRef(null);
+  const scrollArea = useRef(null);
 
-  const showToast = (message, type = 'success', title = '') => {
+  const selectTab = useCallback((tab) => {
+    setActiveTab(tab);
+    scrollArea.current?.scrollTo(0, 0);
+    window.scrollTo(0, 0);
+  }, []);
+
+  const showToast = useCallback((message, type = 'success', title = '') => {
     setToast({ message, type, title });
-    setTimeout(() => setToast(null), 3000);
-  };
+  }, []);
 
-  // ─── SWR SYNC: Tải dữ liệu từ Google Sheet ────────────────────────────────
-  const loadData = useCallback(async (isManual = false) => {
+  const loadData = useCallback(async (manual = false, background = false) => {
     if (!session) return;
-    setIsRefreshing(true);
+    if (!background) setIsRefreshing(true);
+    const request = loadingData.current || fetchAllData();
+    loadingData.current = request;
     try {
-      const res = await fetchAllData();
-      if (res.houses && res.houses.length > 0) setHouses(res.houses);
-      if (res.harvests) setHarvests(res.harvests);
-      if (res.sales) setSales(res.sales);
-
-      if (isManual) {
-        showToast('Đã đồng bộ dữ liệu mới nhất từ Google Sheet!', 'success', 'Đồng bộ hoàn tất');
-      }
-    } catch (err) {
-      console.warn('Lỗi đồng bộ dữ liệu:', err);
-      if (isManual) {
-        showToast('Không thể kết nối Google Sheet lúc này. Đang dùng dữ liệu bộ nhớ đệm.', 'warning');
-      }
+      const data = await request;
+      if (getSession()?.token !== session.token) return;
+      setHouses(data.houses || []);
+      setHarvests(data.harvests || []);
+      setSales(data.sales || []);
+      setNestTypes(data.nestTypes?.length ? data.nestTypes : NEST_TYPES);
+      setProducts(data.products || []);
+      setTags(data.tags || []);
+      setSettings(data.settings || {});
+      setSyncStatus('ready');
+      setLastSyncedAt(new Date());
+      if (manual) showToast('Đã cập nhật dữ liệu mới nhất từ Google Sheet.');
+    } catch (error) {
+      if (getSession()?.token !== session.token) return;
+      setSyncStatus('offline');
+      if (!background) showToast(`Không thể đồng bộ: ${error.message}. Dữ liệu đang hiển thị chưa được cập nhật.`, 'warning');
     } finally {
-      setIsRefreshing(false);
+      if (loadingData.current === request) loadingData.current = null;
+      if (!background) setIsRefreshing(false);
     }
-  }, [session]);
+  }, [session, showToast]);
 
   useEffect(() => {
     loadData();
+    const refreshInBackground = () => {
+      if (document.visibilityState === 'visible') loadData(false, true);
+    };
+    const timer = window.setInterval(refreshInBackground, 30_000);
+    document.addEventListener('visibilitychange', refreshInBackground);
+    window.addEventListener('focus', refreshInBackground);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', refreshInBackground);
+      window.removeEventListener('focus', refreshInBackground);
+    };
   }, [loadData]);
 
-  // ─── Cập nhật nhà yến được phân công cho nhân viên ────────────────────────
   const visibleHouses = useMemo(() => {
     if (!session) return [];
-    if (!session.allowedHouses || session.allowedHouses.length === 0 || session.role === 'admin') {
-      return houses;
-    }
-    const allowed = Array.isArray(session.allowedHouses)
-      ? session.allowedHouses
-      : String(session.allowedHouses).split(',').map((s) => s.trim()).filter(Boolean);
-    return houses.filter((h) => allowed.includes(h.id));
+    return houses.filter((house) => canAccessHouse(session, house.id));
   }, [houses, session]);
-
-  // Đồng bộ activeHouse khi visibleHouses thay đổi
-  useEffect(() => {
-    if (visibleHouses.length > 0 && !visibleHouses.find((h) => h.id === activeHouse?.id)) {
-      setActiveHouse(visibleHouses[0]);
-    }
-  }, [visibleHouses, activeHouse]);
-
-  // ─── TÍNH TOÁN TỒN KHO REAL-TIME ──────────────────────────────────────────
+  const activeHouse = visibleHouses.find((house) => house.id === activeHouseId) || visibleHouses[0];
   const inventoryData = useMemo(
-    () => calculateInventory(houses, harvests, sales),
-    [houses, harvests, sales]
+    () => calculateInventory(houses, harvests, sales, nestTypes),
+    [houses, harvests, sales, nestTypes]
   );
+  const appName = settings.appName?.trim() || DEFAULT_APP_NAME;
 
-  // ─── THAO TÁC THU HOẠCH ───────────────────────────────────────────────────
-  const handleAddHarvest = async (newHarvest) => {
-    if (!canAccessHouse(session, newHarvest.houseId)) {
-      showToast('Bạn không có quyền nhập liệu cho nhà yến này!', 'error');
-      return;
-    }
-
-    setHarvests((prev) => [newHarvest, ...prev]);
-    showToast(`Đã ghi nhận +${newHarvest.weight}g vào kho [${newHarvest.houseName}]`, 'success');
-
-    try {
-      await addHarvest(newHarvest);
-    } catch (err) {
-      console.error(err);
-      showToast('Lỗi gửi lên Google Sheet: ' + err.message, 'warning');
-    }
+  const addHarvestRecord = async (record) => {
+    if (!canAccessHouse(session, record.houseId)) throw new Error('Bạn không có quyền nhập cho nhà yến này.');
+    const saved = await addHarvest(record);
+    setHarvests((current) => [saved, ...current]);
+    showToast(`Đã lưu ${Number(saved.weight).toLocaleString('vi-VN')} g thu hoạch vào Sheet.`);
+    return saved;
   };
-
-  const handleDeleteHarvest = async (id) => {
-    if (!session?.canDeleteRecords) {
-      showToast('Chỉ Quản trị viên mới có quyền xóa phiếu!', 'error');
-      return;
-    }
-    setHarvests((prev) => prev.filter((i) => i.id !== id));
-    showToast('Đã xóa phiếu thu hoạch', 'info');
-
-    try {
-      await deleteHarvest(id);
-    } catch (err) {
-      console.error(err);
-    }
+  const addSaleRecord = async (record) => {
+    const saved = await addSale(record);
+    setSales((current) => [saved, ...current]);
+    showToast('Đã lưu đơn bán và cập nhật kho.');
+    return saved;
   };
-
-  // ─── THAO TÁC BÁN HÀNG ────────────────────────────────────────────────────
-  const handleAddSale = async (newSale) => {
-    if (!canAccessHouse(session, newSale.houseId)) {
-      showToast('Bạn không có quyền xuất bán từ kho này!', 'error');
-      return;
-    }
-
-    setSales((prev) => [newSale, ...prev]);
-    showToast(`Đã tạo đơn bán ${newSale.weight}g cho [${newSale.customerName}]`, 'success');
-
-    try {
-      await addSale(newSale);
-    } catch (err) {
-      console.error(err);
-      showToast('Lỗi gửi lên Google Sheet: ' + err.message, 'warning');
-    }
+  const deleteHarvestRecord = async (id) => {
+    if (session?.role !== 'admin') throw new Error('Chỉ chủ nhà được xóa phiếu.');
+    await deleteHarvest(id);
+    setHarvests((current) => current.filter((item) => item.id !== id));
+    showToast('Đã xóa phiếu thu hoạch.', 'info');
   };
-
-  const handleDeleteSale = async (id) => {
-    if (!session?.canDeleteRecords) {
-      showToast('Chỉ Quản trị viên mới có quyền xóa đơn bán!', 'error');
-      return;
-    }
-    setSales((prev) => prev.filter((i) => i.id !== id));
-    showToast('Đã xóa đơn bán hàng', 'info');
-
-    try {
-      await deleteSale(id);
-    } catch (err) {
-      console.error(err);
-    }
+  const deleteSaleRecord = async (id) => {
+    if (session?.role !== 'admin') throw new Error('Chỉ chủ nhà được xóa đơn.');
+    await deleteSale(id);
+    setSales((current) => current.filter((item) => item.id !== id));
+    showToast('Đã xóa đơn bán.', 'info');
   };
-
-  const handleUpdateSaleStatus = async (id, newStatus) => {
-    setSales((prev) =>
-      prev.map((i) => (i.id === id ? { ...i, status: newStatus } : i))
-    );
-    showToast(newStatus === 'paid' ? 'Đã thu tiền đơn hàng!' : 'Đã chuyển sang ghi nợ', 'success');
-
-    try {
-      await updateSaleStatus(id, newStatus);
-    } catch (err) {
-      console.error(err);
-    }
+  const changeSaleStatus = async (id, status) => {
+    await updateSaleStatus(id, status);
+    setSales((current) => current.map((item) => item.id === id ? { ...item, status } : item));
+    showToast(status === 'paid' ? 'Đã ghi nhận thu tiền.' : 'Đã chuyển sang ghi nợ.');
   };
-
-  // ─── THAO TÁC CƠ SỞ & LUÂN CHUYỂN ─────────────────────────────────────────
-  const handleSaveHouses = async (updatedHouses) => {
-    setHouses(updatedHouses);
-    showToast('Đã cập nhật danh sách nhà yến!', 'success');
-    try {
-      await saveHouses(updatedHouses);
-    } catch (err) {
-      console.error(err);
-    }
+  const saveHouseList = async (nextHouses) => {
+    const saved = await saveHouses(nextHouses);
+    setHouses(saved);
+    showToast('Đã lưu danh sách nhà yến vào Sheet.');
+    return saved;
   };
-
-  const handleTransferStock = async (fromHouseId, toHouseId, weight, note) => {
-    const fromHouse = houses.find((h) => h.id === fromHouseId);
-    const toHouse = houses.find((h) => h.id === toHouseId);
-
-    const transferOut = {
-      id: 'trans_out_' + Date.now(),
-      houseId: fromHouseId,
-      houseName: fromHouse?.name || fromHouseId,
-      date: new Date().toISOString().slice(0, 10),
-      customerName: `Chuyển kho ➔ ${toHouse?.name || toHouseId}`,
-      customerPhone: '',
-      weight: Number(weight),
-      typeId: 'tho_a',
-      typeName: 'Tổ thô (Chuyển kho)',
-      pricePer100g: 0,
-      totalAmount: 0,
-      status: 'paid',
-      note: note || 'Luân chuyển nội bộ',
-      createdAt: new Date().toISOString(),
-    };
-
-    const transferIn = {
-      id: 'trans_in_' + Date.now(),
-      houseId: toHouseId,
-      houseName: toHouse?.name || toHouseId,
-      date: new Date().toISOString().slice(0, 10),
-      weight: Number(weight),
-      typeId: 'tho_a',
-      typeName: 'Tổ thô (Nhận chuyển kho)',
-      shift: 'Chuyển kho nội bộ',
-      note: `Nhận từ [${fromHouse?.name}]: ${note}`,
-      staffName: session?.name || 'Hệ thống',
-      createdAt: new Date().toISOString(),
-    };
-
-    setSales((prev) => [transferOut, ...prev]);
-    setHarvests((prev) => [transferIn, ...prev]);
-    showToast(`Đã luân chuyển ${weight}g từ [${fromHouse?.name}] sang [${toHouse?.name}]!`, 'success');
-
-    try {
-      await Promise.all([addSale(transferOut), addHarvest(transferIn)]);
-    } catch (err) {
-      console.error(err);
-    }
+  const saveAppConfiguration = async (configuration) => {
+    const saved = await saveConfiguration(configuration);
+    setNestTypes(saved.nestTypes);
+    setProducts(saved.products);
+    setTags(saved.tags);
+    setSettings(saved.settings);
+    showToast('Đã lưu danh mục và tên gọi vào Sheet.');
+    return saved;
   };
-
-  // ─── MODAL XÁC NHẬN XÓA ───────────────────────────────────────────────────
-  const handleRequestDelete = (type, item) => {
-    if (!session?.canDeleteRecords) {
-      showToast('Chỉ Quản trị viên mới có quyền xóa dữ liệu!', 'error');
-      return;
-    }
-
-    if (type === 'harvest') {
-      setConfirmModal({
-        isOpen: true,
-        title: 'Xác nhận xóa phiếu thu',
-        message: `Bạn có chắc muốn xóa phiếu thu ngày ${item.date} (${item.weight}g - ${item.typeName}) tại [${item.houseName}]?`,
-        confirmLabel: 'Xóa phiếu',
-        variant: 'danger',
-        onConfirm: () => {
-          handleDeleteHarvest(item.id);
-          setConfirmModal({ isOpen: false });
-        },
-      });
-    } else if (type === 'sale') {
-      setConfirmModal({
-        isOpen: true,
-        title: 'Xác nhận xóa đơn bán',
-        message: `Bạn có chắc muốn xóa đơn bán của khách hàng [${item.customerName}] (${item.weight}g - ${(item.totalAmount || 0).toLocaleString('vi-VN')} đ)?`,
-        confirmLabel: 'Xóa đơn',
-        variant: 'danger',
-        onConfirm: () => {
-          handleDeleteSale(item.id);
-          setConfirmModal({ isOpen: false });
-        },
-      });
-    } else if (type === 'house') {
-      setConfirmModal({
-        isOpen: true,
-        title: 'Xác nhận xóa cơ sở',
-        message: `Bạn có chắc muốn xóa cơ sở [${item.name}] khỏi danh mục?`,
-        confirmLabel: 'Xóa cơ sở',
-        variant: 'danger',
-        onConfirm: () => {
-          handleSaveHouses(houses.filter((h) => h.id !== item.id));
-          setConfirmModal({ isOpen: false });
-        },
-      });
-    }
-  };
-
-  const handleResetData = () => {
-    if (!session?.canDeleteRecords) {
-      showToast('Chỉ Quản trị viên mới có thể đặt lại dữ liệu!', 'error');
-      return;
-    }
+  const requestDelete = (kind, item) => {
+    if (session?.role !== 'admin') return;
+    const isHarvest = kind === 'harvest';
+    const isHouse = kind === 'house';
     setConfirmModal({
       isOpen: true,
-      title: 'Khôi phục dữ liệu gốc',
-      message: 'Thao tác này sẽ đặt lại danh sách nhà yến và các phiếu mẫu ban đầu. Bạn có chắc chắn?',
-      confirmLabel: 'Khôi phục ngay',
-      variant: 'warning',
-      onConfirm: () => {
-        localStorage.clear();
-        setHouses(DEFAULT_HOUSES);
-        setActiveHouse(DEFAULT_HOUSES[0]);
-        setHarvests(INITIAL_HARVESTS);
-        setSales(INITIAL_SALES);
-        setConfirmModal({ isOpen: false });
-        showToast('Đã khôi phục dữ liệu mẫu ban đầu!', 'success');
+      title: isHouse ? 'Ngừng sử dụng nhà yến?' : isHarvest ? 'Xóa phiếu thu hoạch?' : 'Xóa đơn bán?',
+      message: isHouse
+        ? `Nhà ${item.name} sẽ ẩn khỏi danh sách nhập liệu. Các phiếu cũ vẫn được giữ trong Google Sheet.`
+        : isHarvest
+        ? `Phiếu ${Number(item.weight).toLocaleString('vi-VN')} g ngày ${item.date} sẽ bị xóa khỏi Google Sheet.`
+        : `Đơn của ${item.customerName} ngày ${item.date} sẽ bị xóa khỏi Google Sheet.`,
+      confirmLabel: isHouse ? 'Ngừng sử dụng' : 'Xóa',
+      variant: 'danger',
+      onConfirm: async () => {
+        setIsDeleting(true);
+        try {
+          if (isHouse) await saveHouseList(houses.filter((house) => String(house.id) !== String(item.id)));
+          else if (isHarvest) await deleteHarvestRecord(item.id);
+          else await deleteSaleRecord(item.id);
+        } catch (error) {
+          showToast(`Chưa xóa được: ${error.message}`, 'error');
+        } finally {
+          setIsDeleting(false);
+          setConfirmModal({ isOpen: false });
+        }
       },
     });
   };
+  const signOut = () => {
+    logout();
+    loadingData.current = null;
+    setSession(null);
+    setHouses([]);
+    setHarvests([]);
+    setSales([]);
+    setProducts([]);
+    setTags([]);
+    setSettings({});
+    setSyncStatus('loading');
+    setLastSyncedAt(null);
+  };
 
-  // ─── RENDER NỘI DUNG TAB CHÍNH ────────────────────────────────────────────
-  const renderTabContent = () => {
+  const renderContent = () => {
     switch (activeTab) {
+      case 'dashboard':
+        return <DashboardTab houses={visibleHouses} harvests={harvests.filter((item) => canAccessHouse(session, item.houseId))} sales={sales} inventoryData={inventoryData} session={session} />;
       case 'harvest':
-        return (
-          <HarvestTab
-            activeHouse={activeHouse || visibleHouses[0]}
-            session={session}
-            harvests={harvests.filter((h) => canAccessHouse(session, h.houseId))}
-            onAddHarvest={handleAddHarvest}
-            onDeleteHarvest={handleDeleteHarvest}
-            onNavigateToHistory={() => setActiveTab('history')}
-            onRequestDelete={handleRequestDelete}
-          />
-        );
-      case 'history':
-        return (
-          <HistoryTab
-            houses={visibleHouses}
-            harvests={harvests.filter((h) => canAccessHouse(session, h.houseId))}
-            sales={sales.filter((s) => canAccessHouse(session, s.houseId))}
-            inventoryData={inventoryData}
-            onDeleteHarvest={handleDeleteHarvest}
-            session={session}
-            onRequestDelete={handleRequestDelete}
-          />
-        );
-      case 'inventory':
-        return (
-          <InventoryTab
-            inventoryData={{
-              ...inventoryData,
-              byHouse: inventoryData.byHouse.filter((h) => canAccessHouse(session, h.houseId)),
-            }}
-            houses={visibleHouses}
-            session={session}
-            onTransferStock={handleTransferStock}
-          />
-        );
+        return <HarvestTab activeHouse={activeHouse} houses={visibleHouses} onSelectHouse={(house) => setActiveHouseId(house?.id || '')} session={session} harvests={harvests.filter((item) => canAccessHouse(session, item.houseId))} nestTypes={nestTypes} tags={tags} onAddHarvest={addHarvestRecord} onNavigateToHistory={() => selectTab('history')} onRequestDelete={requestDelete} />;
       case 'sales':
-        return (
-          <SalesTab
-            houses={visibleHouses}
-            sales={sales.filter((s) => canAccessHouse(session, s.houseId))}
-            inventoryData={inventoryData}
-            session={session}
-            onAddSale={handleAddSale}
-            onDeleteSale={handleDeleteSale}
-            onUpdateSaleStatus={handleUpdateSaleStatus}
-            onRequestDelete={handleRequestDelete}
-          />
-        );
+        return <SalesTab sales={sales} inventoryData={inventoryData} products={products} nestTypes={nestTypes} tags={tags} session={session} onAddSale={addSaleRecord} onUpdateSaleStatus={changeSaleStatus} onRequestDelete={requestDelete} />;
+      case 'inventory':
+        return <InventoryTab inventoryData={inventoryData} nestTypes={nestTypes} session={session} />;
+      case 'history':
+        return <HistoryTab houses={visibleHouses} harvests={harvests.filter((item) => canAccessHouse(session, item.houseId))} sales={sales} inventoryData={inventoryData} nestTypes={nestTypes} products={products} tags={tags} session={session} onRequestDelete={requestDelete} />;
       case 'houses':
-        return (
-          <HousesTab
-            houses={houses}
-            session={session}
-            onSaveHouses={handleSaveHouses}
-            onResetData={handleResetData}
-            onRequestDelete={handleRequestDelete}
-          />
-        );
+        return session?.role === 'admin' ? <HousesTab houses={houses} session={session} onSaveHouses={saveHouseList} onRequestDelete={requestDelete} /> : null;
+      case 'settings':
+        return session?.role === 'admin' ? <SettingsTab nestTypes={nestTypes} products={products} tags={tags} settings={settings} onSaveConfiguration={saveAppConfiguration} /> : null;
       case 'users':
-        return (
-          <UserManageTab session={session} houses={houses} />
-        );
+        return <UserManageTab session={session} houses={visibleHouses} />;
       default:
         return null;
     }
   };
 
-  // ─── NẾU CHƯA ĐĂNG NHẬP ───────────────────────────────────────────────────
   if (!session) {
-    return (
-      <LoginScreen
-        onLoginSuccess={(s) => {
-          setSession(s);
-          setActiveTab('harvest');
-          showToast(`Chào mừng trở lại, ${s.name}!`, 'success');
-        }}
-      />
-    );
+    return <LoginScreen onLoginSuccess={(nextSession) => {
+      setSession(nextSession);
+      setActiveTab(nextSession.role === 'admin' ? 'dashboard' : 'harvest');
+      setSyncStatus('loading');
+      showToast(`Xin chào ${nextSession.name}.`);
+    }} />;
   }
 
-  // ─── GIAO DIỆN CHÍNH (DESKTOP & MOBILE RESPONSIVE) ─────────────────────────
   return (
-    <div className="min-h-screen bg-slate-100 text-slate-800 flex justify-center">
-      {/* ─── DESKTOP LAYOUT (Màn hình máy tính & iPad ngang) ────────────────── */}
-      <div className="w-full min-h-screen hidden md:flex">
-        {/* Sidebar Cố Định Bên Trái */}
-        <DesktopSidebar
-          activeTab={activeTab}
-          setActiveTab={setActiveTab}
-          session={session}
-          houses={visibleHouses}
-          activeHouse={activeHouse || visibleHouses[0] || DEFAULT_HOUSES[0]}
-          setActiveHouse={setActiveHouse}
-          onLogout={() => {
-            logout();
-            setSession(null);
-            showToast('Đã đăng xuất khỏi hệ thống', 'info');
-          }}
-          onRefresh={() => loadData(true)}
-          isRefreshing={isRefreshing}
-          harvests={harvests}
-          sales={sales}
-          inventoryData={inventoryData}
-        />
-
-        {/* Vùng Nội Dung Chính Rộng Rãi Bên Phải */}
-        <div className="flex-1 min-h-screen bg-slate-50/90 p-6 lg:p-8 overflow-y-auto max-w-7xl mx-auto">
-          {/* Topbar Desktop */}
-          <Header
-            activeHouse={activeHouse || visibleHouses[0] || DEFAULT_HOUSES[0]}
-            setActiveHouse={setActiveHouse}
-            houses={visibleHouses}
-            session={session}
-            onLogout={() => {
-              logout();
-              setSession(null);
-              showToast('Đã đăng xuất khỏi hệ thống', 'info');
-            }}
-            onRefresh={() => loadData(true)}
-            isRefreshing={isRefreshing}
-            harvests={harvests}
-            sales={sales}
-            inventoryData={inventoryData}
-            activeTab={activeTab}
-          />
-
-          {/* Nội dung Tab */}
-          <main className="pb-12">
-            {renderTabContent()}
-          </main>
-        </div>
-      </div>
-
-      {/* ─── MOBILE LAYOUT (Màn hình điện thoại di động) ────────────────────── */}
-      <div className="md:hidden w-full bg-slate-50 min-h-screen flex flex-col shadow-sm overflow-hidden relative">
-        <Header
-          activeHouse={activeHouse || visibleHouses[0] || DEFAULT_HOUSES[0]}
-          setActiveHouse={setActiveHouse}
-          houses={visibleHouses}
-          session={session}
-          onLogout={() => {
-            logout();
-            setSession(null);
-            showToast('Đã đăng xuất khỏi hệ thống', 'info');
-          }}
-          onRefresh={() => loadData(true)}
-          isRefreshing={isRefreshing}
-          harvests={harvests}
-          sales={sales}
-          inventoryData={inventoryData}
-          activeTab={activeTab}
-        />
-
-        <main className="flex-1 p-3.5 pb-24 overflow-y-auto">
-          {renderTabContent()}
+    <div className="app-shell">
+      <DesktopSidebar activeTab={activeTab} setActiveTab={selectTab} session={session} onLogout={signOut} appName={appName} settings={settings} sales={sales} />
+      <div className="mobile-main-column min-w-0 flex-1">
+        <Header activeTab={activeTab} appName={appName} settings={settings} session={session} onRefresh={() => loadData(true)} isRefreshing={isRefreshing} syncStatus={syncStatus} lastSyncedAt={lastSyncedAt} />
+        <main ref={scrollArea} id="main-content" className="mobile-scroll-area mobile-content mx-auto w-full max-w-7xl px-3 pt-3 sm:px-5 lg:px-8 lg:pb-10 lg:pt-0">
+          {renderContent()}
         </main>
-
-        <BottomNav activeTab={activeTab} setActiveTab={setActiveTab} session={session} />
       </div>
-
-      {/* ─── TOAST & MODAL TOÀN CỤC ─────────────────────────────────────────── */}
+      <BottomNav activeTab={activeTab} setActiveTab={selectTab} session={session} onLogout={signOut} settings={settings} />
       <Toast toast={toast} onClose={() => setToast(null)} />
-      <ConfirmModal
-        isOpen={confirmModal.isOpen}
-        title={confirmModal.title}
-        message={confirmModal.message}
-        confirmLabel={confirmModal.confirmLabel}
-        variant={confirmModal.variant}
-        onConfirm={confirmModal.onConfirm}
-        onCancel={() => setConfirmModal({ isOpen: false })}
-      />
+      <ConfirmModal isOpen={confirmModal.isOpen} title={confirmModal.title} message={confirmModal.message} confirmLabel={confirmModal.confirmLabel} variant={confirmModal.variant} loading={isDeleting} onConfirm={confirmModal.onConfirm} onCancel={() => setConfirmModal({ isOpen: false })} />
     </div>
   );
 }

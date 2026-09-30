@@ -1,451 +1,218 @@
-import React, { useState } from 'react';
-import confetti from 'canvas-confetti';
-import { ShoppingBag, Check, Trash2, User, Phone, Tag, Building2, MessageCircle, AlertTriangle, Plus, Search, DollarSign } from 'lucide-react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Check, CircleAlert, CircleCheck, MessageCircle, Phone, Search, ShoppingBag, Trash2 } from 'lucide-react';
 import { NEST_TYPES } from '../data/constants';
 
+const DRAFT_KEY = 'minhtrieu_sale_draft';
+const readDraft = () => {
+  try { return JSON.parse(localStorage.getItem(DRAFT_KEY) || '{}'); } catch { return {}; }
+};
+const money = (value) => Number(value || 0).toLocaleString('vi-VN');
+const safePhone = (value) => String(value || '').replace(/[^0-9+]/g, '');
+const dateLabel = (value) => {
+  const [year, month, day] = String(value || '').split('-');
+  return year && month && day ? `${day}/${month}/${year}` : value;
+};
+const localToday = () => {
+  const date = new Date();
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+};
+const newSaleId = () => `sale_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+const nowIso = () => new Date().toISOString();
+
 export default function SalesTab({
-  houses,
-  sales,
-  inventoryData,
-  onAddSale,
-  onDeleteSale,
-  onUpdateSaleStatus,
-  onRequestDelete,
+  sales = [], inventoryData, products = [], nestTypes = NEST_TYPES, tags = [], session,
+  onAddSale, onUpdateSaleStatus, onRequestDelete,
 }) {
-  const [houseId, setHouseId] = useState(houses[0]?.id || 'h1');
-  const [customerName, setCustomerName] = useState('');
-  const [customerPhone, setCustomerPhone] = useState('');
-  const [weight, setWeight] = useState(300);
-  const [selectedType, setSelectedType] = useState(NEST_TYPES[0]);
-  const [pricePer100g, setPricePer100g] = useState(NEST_TYPES[0].defaultPricePer100g);
-  const [status, setStatus] = useState('paid');
-  const [note, setNote] = useState('');
+  const [draft] = useState(readDraft);
+  const catalog = useMemo(() => {
+    const list = products.length ? products : nestTypes.map((type) => ({
+      id: type.id, name: type.label, stockTypeId: type.id, pricePer100g: type.defaultPricePer100g, isActive: type.isActive,
+    }));
+    return list.filter((product) => product.isActive !== false);
+  }, [products, nestTypes]);
+  const [productId, setProductId] = useState(draft.productId || catalog[0]?.id || '');
+  const [customerName, setCustomerName] = useState(draft.customerName || '');
+  const [customerPhone, setCustomerPhone] = useState(draft.customerPhone || '');
+  const [weight, setWeight] = useState(draft.weight || '');
+  const [pricePer100g, setPricePer100g] = useState(draft.pricePer100g || String(catalog[0]?.pricePer100g || 0));
+  const [status, setStatus] = useState(draft.status || 'paid');
+  const [note, setNote] = useState(draft.note || '');
+  const [tagIds, setTagIds] = useState(draft.tagIds || '');
   const [searchQuery, setSearchQuery] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [pendingStatusId, setPendingStatusId] = useState('');
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
 
-  const totalAmount = Math.round(((Number(weight) || 0) / 100) * (Number(pricePer100g) || 0));
+  const product = catalog.find((item) => item.id === productId) || catalog[0];
+  const stockTypeId = product?.stockTypeId || product?.inventoryTypeId || product?.id;
+  const stockType = inventoryData?.byType?.[stockTypeId];
+  const stock = Number(stockType?.stockWeight || 0);
+  const grams = Number(weight || 0);
+  const totalAmount = Math.round(grams / 100 * Number(pricePer100g || 0));
+  const insufficient = grams > 0 && grams > stock;
+  const activeTags = tags.filter((tag) => tag.isActive !== false);
+  const canViewFinance = session?.role === 'admin';
 
-  const activeHouseStock = inventoryData?.byHouse?.find((h) => h.houseId === houseId);
-  const currentStockG = activeHouseStock ? activeHouseStock.currentStockWeight : 0;
-  const isStockSufficient = currentStockG >= Number(weight || 0);
+  useEffect(() => {
+    localStorage.setItem(DRAFT_KEY, JSON.stringify({ productId, customerName, customerPhone, weight, pricePer100g, status, note, tagIds }));
+  }, [productId, customerName, customerPhone, weight, pricePer100g, status, note, tagIds]);
 
-  const totalRevenue = sales.reduce((sum, s) => sum + (s.totalAmount || 0), 0);
-  const totalDebt = sales
-    .filter((s) => s.status === 'debt')
-    .reduce((sum, s) => sum + (s.totalAmount || 0), 0);
-  const totalSoldWeight = sales.reduce((sum, s) => sum + (s.weight || 0), 0);
-
-  const filteredSales = sales.filter((s) => {
-    if (!searchQuery.trim()) return true;
-    const q = searchQuery.toLowerCase();
-    return (
-      (s.customerName && s.customerName.toLowerCase().includes(q)) ||
-      (s.customerPhone && s.customerPhone.includes(q)) ||
-      (s.houseName && s.houseName.toLowerCase().includes(q))
-    );
-  });
-
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    if (!customerName.trim()) {
-      alert('Vui lòng nhập tên khách hàng!');
-      return;
+  useEffect(() => {
+    if (catalog.length && !catalog.some((item) => item.id === productId)) {
+      setProductId(catalog[0].id);
+      setPricePer100g(String(catalog[0].pricePer100g || 0));
     }
-    if (!weight || Number(weight) <= 0) {
-      alert('Vui lòng nhập khối lượng xuất bán!');
-      return;
-    }
+  }, [catalog, productId]);
 
-    const houseObj = houses.find((h) => h.id === houseId) || houses[0];
-
-    const newSale = {
-      id: 'sale_' + Date.now(),
-      houseId: houseObj.id,
-      houseName: houseObj.name,
-      date: new Date().toISOString().slice(0, 10),
-      customerName: customerName.trim(),
-      customerPhone: customerPhone.trim(),
-      weight: Number(weight),
-      typeId: selectedType.id,
-      typeName: selectedType.label,
-      pricePer100g: Number(pricePer100g),
-      totalAmount,
-      status,
-      note: note.trim(),
-      createdAt: new Date().toISOString(),
-    };
-
-    onAddSale(newSale);
-
-    confetti({
-      particleCount: 35,
-      spread: 50,
-      origin: { y: 0.8 },
-      colors: ['#047857', '#3b82f6'],
-    });
-
-    setCustomerName('');
-    setCustomerPhone('');
-    setNote('');
+  const chooseProduct = (id) => {
+    const chosen = catalog.find((item) => item.id === id);
+    setProductId(id);
+    setPricePer100g(String(chosen?.pricePer100g || 0));
+    setError('');
   };
 
+  const submit = async (event) => {
+    event.preventDefault();
+    setError('');
+    setSuccess('');
+    if (!product) { setError('Chưa có loại tổ bán. Chủ nhà cần thêm vào Danh mục.'); return; }
+    if (!customerName.trim()) { setError('Nhập tên khách hàng để lưu đơn.'); return; }
+    if (!Number.isFinite(grams) || grams <= 0) { setError('Nhập số gram lớn hơn 0.'); return; }
+    if (insufficient) { setError(`Kho chỉ còn ${stock.toLocaleString('vi-VN')} g ${product.name}. Hãy giảm số lượng bán.`); return; }
+    setSaving(true);
+    try {
+      const sale = {
+        id: newSaleId(),
+        houseId: '',
+        houseName: 'Kho tại nhà',
+        date: localToday(),
+        customerName: customerName.trim(),
+        customerPhone: safePhone(customerPhone),
+        weight: grams,
+        productId: product.id,
+        productName: product.name,
+        inventoryTypeId: stockTypeId,
+        typeId: stockTypeId,
+        typeName: product.name,
+        pricePer100g: Number(pricePer100g || 0),
+        totalAmount,
+        status,
+        note: note.trim(),
+        tagIds,
+        staffName: session?.name || 'Người bán',
+        createdAt: nowIso(),
+      };
+      await onAddSale(sale);
+      setCustomerName('');
+      setCustomerPhone('');
+      setWeight('');
+      setNote('');
+      setTagIds('');
+      setSuccess('Đã lưu đơn bán vào Google Sheet và trừ tồn kho.');
+    } catch (err) {
+      setError(err.message || 'Chưa thể lưu đơn. Kiểm tra kết nối rồi thử lại.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const changeStatus = async (sale) => {
+    setPendingStatusId(sale.id);
+    try { await onUpdateSaleStatus(sale.id, sale.status === 'paid' ? 'debt' : 'paid'); }
+    catch (err) { setError(err.message || 'Chưa thể cập nhật thanh toán.'); }
+    finally { setPendingStatusId(''); }
+  };
+
+  const filteredSales = sales.filter((sale) => {
+    const query = searchQuery.trim().toLocaleLowerCase('vi-VN');
+    return !query || [sale.customerName, sale.customerPhone, sale.productName, sale.typeName].some((value) => String(value || '').toLocaleLowerCase('vi-VN').includes(query));
+  });
+  const soldWeight = sales.reduce((sum, sale) => sum + Number(sale.weight || 0), 0);
+  const totalDebt = sales.filter((sale) => sale.status === 'debt').reduce((sum, sale) => sum + Number(sale.totalAmount || 0), 0);
+
   return (
-    <div className="space-y-5">
-      {/* ─── TOP KPI CARDS ─────────────────────────────────────────────────── */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
-        <div className="bg-white border border-slate-200/80 p-4 lg:p-5 rounded-3xl shadow-xs">
-          <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">
-            Tổng doanh thu đã bán
-          </span>
-          <div className="text-xl lg:text-2xl font-black font-mono text-slate-900 mt-1 tabular-nums">
-            {totalRevenue.toLocaleString('vi-VN')} đ
-          </div>
-          <span className="text-xs text-slate-500 mt-0.5 inline-block font-medium">
-            {sales.length} đơn hoàn tất
-          </span>
+    <div className="page-enter space-y-5">
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div className="surface p-4">
+          <p className="eyebrow">Đã bán</p>
+          <p className="mt-1 font-['Be_Vietnam_Pro'] text-2xl font-extrabold tabular-nums">{soldWeight.toLocaleString('vi-VN')} g</p>
+          <p className="text-sm text-[#60736d]">{sales.length} đơn bán</p>
         </div>
-
-        <div className="bg-white border border-slate-200/80 p-4 lg:p-5 rounded-3xl shadow-xs">
-          <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">
-            Công nợ còn phải thu
-          </span>
-          <div className="text-xl lg:text-2xl font-black font-mono text-amber-600 mt-1 tabular-nums">
-            {totalDebt.toLocaleString('vi-VN')} đ
-          </div>
-          <span className="text-xs text-amber-700/80 mt-0.5 inline-block font-medium">
-            {sales.filter((s) => s.status === 'debt').length} đơn ghi nợ
-          </span>
-        </div>
-
-        <div className="bg-white border border-slate-200/80 p-4 lg:p-5 rounded-3xl shadow-xs">
-          <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">
-            Tổng sản lượng đã xuất
-          </span>
-          <div className="text-xl lg:text-2xl font-black font-mono text-emerald-800 mt-1 tabular-nums">
-            {totalSoldWeight.toLocaleString()} g
-          </div>
-          <span className="text-xs text-slate-500 mt-0.5 inline-block font-medium">
-            ≈ {(totalSoldWeight / 1000).toFixed(2)} kg tổ xuất kho
-          </span>
-        </div>
+        {canViewFinance && <div className="surface p-4">
+          <p className="eyebrow">Công nợ còn thu</p>
+          <p className="mt-1 font-['Be_Vietnam_Pro'] text-2xl font-extrabold text-[#9b6225] tabular-nums">{money(totalDebt)} đ</p>
+          <p className="text-sm text-[#60736d]">{sales.filter((sale) => sale.status === 'debt').length} đơn ghi nợ</p>
+        </div>}
       </div>
-
-      {/* ─── 2 CỘT RESPONSIVE ──────────────────────────────────────────────── */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 lg:gap-6">
-        {/* CỘT TRÁI: FORM TẠO ĐƠN BÁN (lg:col-span-5) */}
-        <div className="lg:col-span-5 space-y-4">
-          <form onSubmit={handleSubmit} className="bg-white rounded-3xl p-5 lg:p-6 border border-slate-200/80 shadow-xs space-y-4">
-            <div className="flex items-center gap-2 pb-3 border-b border-slate-100">
-              <div className="w-8 h-8 rounded-xl bg-blue-100 text-blue-800 flex items-center justify-center font-bold text-xs">
-                <ShoppingBag className="w-4 h-4" />
-              </div>
-              <div>
-                <h3 className="text-sm font-bold text-slate-900">Tạo đơn bán & xuất kho</h3>
-                <p className="text-[11px] text-slate-400">Tự động trừ tồn kho nhà tương ứng</p>
-              </div>
-            </div>
-
-            {/* Chọn cơ sở xuất */}
-            <div>
-              <label className="text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1 flex items-center gap-1">
-                <Building2 className="w-3 h-3 text-slate-400" /> Xuất từ nhà yến:
-              </label>
-              <select
-                value={houseId}
-                onChange={(e) => setHouseId(e.target.value)}
-                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 outline-none cursor-pointer"
-              >
-                {houses.map((h) => {
-                  const stock = inventoryData?.byHouse?.find((item) => item.houseId === h.id)?.currentStockWeight || 0;
-                  return (
-                    <option key={h.id} value={h.id}>
-                      {h.name} (Tồn: {stock.toLocaleString()}g)
-                    </option>
-                  );
-                })}
-              </select>
-            </div>
-
-            {/* Khách hàng & SĐT */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <label className="text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1 block">
-                  Tên khách hàng *
-                </label>
-                <div className="relative">
-                  <input
-                    type="text"
-                    value={customerName}
-                    onChange={(e) => setCustomerName(e.target.value)}
-                    placeholder="Chị Mai..."
-                    required
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-8 pr-2.5 py-2 text-xs font-semibold text-slate-800 outline-none"
-                  />
-                  <User className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
-                </div>
-              </div>
-
-              <div>
-                <label className="text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1 block">
-                  SĐT liên hệ
-                </label>
-                <div className="relative">
-                  <input
-                    type="tel"
-                    value={customerPhone}
-                    onChange={(e) => setCustomerPhone(e.target.value)}
-                    placeholder="0903..."
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-8 pr-2.5 py-2 text-xs font-semibold text-slate-800 outline-none"
-                  />
-                  <Phone className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
-                </div>
-              </div>
-            </div>
-
-            {/* Loại tổ bán */}
-            <div className="space-y-1.5">
-              <label className="text-[11px] font-bold uppercase tracking-wider text-slate-500 block">
-                Loại tổ bán:
-              </label>
-              <div className="grid grid-cols-2 gap-1.5">
-                {NEST_TYPES.map((type) => {
-                  const isSelected = selectedType.id === type.id;
-                  return (
-                    <button
-                      type="button"
-                      key={type.id}
-                      onClick={() => {
-                        setSelectedType(type);
-                        setPricePer100g(type.defaultPricePer100g);
-                      }}
-                      className={`px-3 py-2 rounded-xl text-left text-xs transition border flex items-center justify-between cursor-pointer ${
-                        isSelected
-                          ? 'bg-emerald-700 text-white font-semibold border-emerald-700'
-                          : 'bg-slate-50 hover:bg-slate-100 text-slate-700 font-medium border-slate-200/80'
-                      }`}
-                    >
-                      <span className="truncate">{type.label}</span>
-                      {isSelected && <Check className="w-3.5 h-3.5 shrink-0" />}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Khối lượng (g) & Đơn giá / 100g */}
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1 block">
-                  Khối lượng (gram)
-                </label>
-                <input
-                  type="number"
-                  value={weight}
-                  onChange={(e) => setWeight(Number(e.target.value))}
-                  placeholder="300"
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono font-bold text-slate-800 outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1 block">
-                  Đơn giá / 100g
-                </label>
-                <input
-                  type="number"
-                  step="50000"
-                  value={pricePer100g}
-                  onChange={(e) => setPricePer100g(Number(e.target.value))}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono font-bold text-slate-800 outline-none"
-                />
-              </div>
-            </div>
-
-            {/* Cảnh báo tồn kho */}
-            {!isStockSufficient && (
-              <div className="flex items-center gap-2 bg-rose-50 border border-rose-200 rounded-xl p-3 text-xs text-rose-800">
-                <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
-                <span>
-                  Cảnh báo: Kho chỉ còn <strong>{currentStockG.toLocaleString()}g</strong>, bạn đang xuất{' '}
-                  <strong>{weight}g</strong>!
-                </span>
-              </div>
-            )}
-
-            {/* Trạng thái thanh toán */}
-            <div>
-              <label className="text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1 block">
-                Trạng thái thanh toán
-              </label>
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onClick={() => setStatus('paid')}
-                  className={`py-2.5 rounded-xl text-xs font-bold transition border cursor-pointer ${
-                    status === 'paid'
-                      ? 'bg-emerald-700 text-white border-emerald-700 shadow-xs'
-                      : 'bg-slate-50 text-slate-600 border-slate-200'
-                  }`}
-                >
-                  ✓ Đã thanh toán
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setStatus('debt')}
-                  className={`py-2.5 rounded-xl text-xs font-bold transition border cursor-pointer ${
-                    status === 'debt'
-                      ? 'bg-amber-600 text-white border-amber-600 shadow-xs'
-                      : 'bg-slate-50 text-slate-600 border-slate-200'
-                  }`}
-                >
-                  ⚠ Ghi nợ khách
-                </button>
-              </div>
-            </div>
-
-            {/* Thành tiền & Nút Lưu */}
-            <div className="pt-3 border-t border-slate-100 flex items-center justify-between">
-              <div>
-                <span className="text-[10px] text-slate-400 block font-medium">Tổng thành tiền:</span>
-                <span className="text-lg font-black font-mono text-emerald-800">
-                  {totalAmount.toLocaleString('vi-VN')} đ
-                </span>
-              </div>
-              <button
-                type="submit"
-                className="py-3 px-6 bg-emerald-700 hover:bg-emerald-600 text-white font-bold text-xs rounded-2xl shadow-md transition cursor-pointer active:scale-95"
-              >
-                Lưu đơn bán
-              </button>
-            </div>
-          </form>
-        </div>
-
-        {/* CỘT PHẢI: DANH SÁCH ĐƠN BÁN HÀNG (lg:col-span-7) */}
-        <div className="lg:col-span-7 space-y-4">
-          <div className="bg-white rounded-3xl p-5 lg:p-6 border border-slate-200/80 shadow-xs space-y-3.5">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pb-2 border-b border-slate-100">
-              <div>
-                <h3 className="text-sm font-bold text-slate-900">Danh sách đơn bán hàng ({filteredSales.length})</h3>
-                <p className="text-[11px] text-slate-400">Theo dõi doanh thu, giao hàng và công nợ</p>
-              </div>
-
-              {/* Ô Tìm Kiếm */}
-              <div className="relative min-w-[200px]">
-                <input
-                  type="text"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Tìm khách, SĐT, nhà..."
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-8 pr-3 py-1.5 text-xs text-slate-800 outline-none"
-                />
-                <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
-              </div>
-            </div>
-
-            {filteredSales.length === 0 ? (
-              <div className="text-center py-12 text-slate-400 text-xs">
-                Chưa có đơn bán hàng nào khớp với tìm kiếm.
-              </div>
-            ) : (
-              <div className="space-y-2.5 max-h-[560px] overflow-y-auto pr-1">
-                {filteredSales.map((sale) => {
-                  const isPaid = sale.status === 'paid';
-                  return (
-                    <div
-                      key={sale.id}
-                      className="p-3.5 bg-slate-50/80 hover:bg-slate-100/70 rounded-2xl border border-slate-200/70 space-y-2.5 transition"
-                    >
-                      <div className="flex justify-between items-start">
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <span className="font-bold text-sm text-slate-900">{sale.customerName}</span>
-                            <span
-                              className={`text-[9px] font-black px-2 py-0.5 rounded-full border ${
-                                isPaid
-                                  ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
-                                  : 'bg-amber-100 text-amber-800 border-amber-300 animate-pulse'
-                              }`}
-                            >
-                              {isPaid ? 'ĐÃ THU TIỀN' : 'GHI NỢ'}
-                            </span>
-                          </div>
-                          <div className="text-xs text-slate-500 mt-0.5">
-                            {sale.date} • Xuất từ: <strong className="text-slate-700">{sale.houseName}</strong>
-                          </div>
-                        </div>
-
-                        <div className="text-right">
-                          <div className="text-base font-black font-mono text-slate-900 tabular-nums">
-                            {(sale.totalAmount || 0).toLocaleString('vi-VN')} đ
-                          </div>
-                          <div className="text-xs text-slate-500 font-mono">
-                            {sale.weight}g • {sale.typeName}
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Actions Footer */}
-                      <div className="flex items-center justify-between pt-2 border-t border-slate-200/60 text-xs">
-                        <div className="flex items-center gap-2">
-                          {sale.customerPhone && (
-                            <>
-                              <a
-                                href={`tel:${sale.customerPhone}`}
-                                className="flex items-center gap-1 text-slate-700 hover:text-emerald-700 font-semibold bg-white px-2.5 py-1 rounded-xl border border-slate-200 shadow-2xs"
-                              >
-                                <Phone className="w-3 h-3 text-emerald-600" /> {sale.customerPhone}
-                              </a>
-                              <a
-                                href={`https://zalo.me/${sale.customerPhone}`}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="flex items-center gap-1 text-blue-600 hover:text-blue-800 font-semibold bg-white px-2.5 py-1 rounded-xl border border-slate-200 shadow-2xs"
-                              >
-                                <MessageCircle className="w-3 h-3 text-blue-500" /> Zalo
-                              </a>
-                            </>
-                          )}
-                        </div>
-
-                        <div className="flex items-center gap-2">
-                          {/* Toggle Trạng Thái */}
-                          <button
-                            type="button"
-                            onClick={() =>
-                              onUpdateSaleStatus(sale.id, isPaid ? 'debt' : 'paid')
-                            }
-                            className={`px-3 py-1 rounded-xl font-bold text-xs border transition cursor-pointer ${
-                              isPaid
-                                ? 'bg-white text-slate-600 border-slate-200 hover:bg-amber-50 hover:text-amber-700'
-                                : 'bg-emerald-700 text-white border-emerald-700 hover:bg-emerald-800 shadow-xs'
-                            }`}
-                          >
-                            {isPaid ? 'Đổi sang nợ' : '✓ Thu nợ ngay'}
-                          </button>
-
-                          {/* Delete */}
-                          <button
-                            type="button"
-                            onClick={() => {
-                              if (onRequestDelete) {
-                                onRequestDelete('sale', sale);
-                              } else {
-                                onDeleteSale(sale.id);
-                              }
-                            }}
-                            className="p-1.5 text-slate-300 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition cursor-pointer"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,.9fr)_minmax(0,1.1fr)]">
+        <form onSubmit={submit} className="surface p-4 sm:p-6">
+          <div className="mb-5 flex items-start justify-between gap-3">
+            <div><p className="eyebrow mb-1">Xuất từ kho tại nhà</p><h2 className="text-xl font-extrabold">Thêm đơn bán</h2></div>
+            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#e7f5eb] text-[#075e4b]"><ShoppingBag aria-hidden="true" className="h-5 w-5" /></div>
           </div>
-        </div>
+          <div className="grid gap-4">
+            <label><span className="mb-1.5 block text-sm font-semibold text-[#41594d]">Loại tổ bán</span><select className="field" value={product?.id || ''} onChange={(event) => chooseProduct(event.target.value)} required>{catalog.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+            <div className="grid grid-cols-2 gap-3">
+              <label><span className="mb-1.5 block text-sm font-semibold text-[#41594d]">Số lượng (g)</span><input className="field text-lg font-bold tabular-nums" type="number" inputMode="numeric" min="1" step="1" value={weight} onChange={(event) => setWeight(event.target.value)} placeholder="0" required /></label>
+              <div className="surface-soft flex flex-col justify-center px-3"><span className="text-xs font-semibold text-[#60736d]">Kho còn</span><strong className="font-['Be_Vietnam_Pro'] text-lg text-[#075e4b] tabular-nums">{stock.toLocaleString('vi-VN')} g</strong></div>
+            </div>
+            {insufficient && <p role="alert" className="flex items-start gap-2 rounded-xl bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-900"><CircleAlert aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0" />Số bán lớn hơn tồn kho của loại tổ này.</p>}
+            <div className="grid gap-3 sm:grid-cols-2">
+              <label><span className="mb-1.5 block text-sm font-semibold text-[#41594d]">Tên khách hàng</span><input className="field" autoComplete="name" type="text" value={customerName} onChange={(event) => setCustomerName(event.target.value)} placeholder="Ví dụ: Chị Mai" required /></label>
+              <label><span className="mb-1.5 block text-sm font-semibold text-[#41594d]">Số điện thoại</span><input className="field" autoComplete="tel" type="tel" inputMode="tel" value={customerPhone} onChange={(event) => setCustomerPhone(event.target.value)} placeholder="Không bắt buộc" /></label>
+            </div>
+            <fieldset>
+              <legend className="mb-2 text-sm font-semibold text-[#41594d]">Thanh toán</legend>
+              <div className="grid grid-cols-2 gap-2">
+                {[['paid', 'Đã thanh toán'], ['debt', 'Ghi nợ']].map(([value, label]) => <button key={value} type="button" aria-pressed={status === value} onClick={() => setStatus(value)} className={`min-h-12 rounded-2xl border px-3 text-sm font-bold ${status === value ? 'border-[#075e4b] bg-[#e7f5eb] text-[#075e4b]' : 'border-[#dce8e1] bg-white text-[#60736d]'}`}>{label}</button>)}
+              </div>
+            </fieldset>
+            <div className="surface-soft grid gap-3 p-3 sm:grid-cols-2">
+              <label><span className="mb-1.5 block text-sm font-semibold text-[#41594d]">Giá bán / 100 g</span><input className="field tabular-nums" type="number" inputMode="numeric" min="0" step="1000" value={pricePer100g} onChange={(event) => setPricePer100g(event.target.value)} readOnly={!canViewFinance} aria-readonly={!canViewFinance} /></label>
+              <div className="flex flex-col justify-center"><span className="text-xs font-semibold text-[#60736d]">Thành tiền</span><strong className="font-['Be_Vietnam_Pro'] text-xl font-extrabold text-[#075e4b] tabular-nums">{money(totalAmount)} đ</strong></div>
+            </div>
+            <details className="rounded-2xl border border-[#e1ebe3] px-4 py-3"><summary className="min-h-8 cursor-pointer text-sm font-semibold text-[#41594d]">Thêm tag và ghi chú</summary><div className="mt-3 space-y-3 border-t border-[#e1ebe3] pt-3">
+              {activeTags.length > 0 && <fieldset><legend className="mb-2 text-sm font-semibold">Tag</legend><div className="flex flex-wrap gap-2">{activeTags.map((tag) => {
+                const selected = tagIds.split(',').filter(Boolean).includes(tag.id);
+                return <button key={tag.id} type="button" aria-pressed={selected} onClick={() => setTagIds((current) => {
+                  const ids = current.split(',').filter(Boolean);
+                  return (selected ? ids.filter((id) => id !== tag.id) : [...ids, tag.id]).join(',');
+                })} className={`min-h-11 rounded-xl border px-3 text-sm font-semibold ${selected ? 'border-[#075e4b] bg-[#e7f5eb] text-[#075e4b]' : 'border-[#dce8e1]'}`}>{tag.name}</button>;
+              })}</div></fieldset>}
+              <label><span className="mb-1.5 block text-sm font-semibold">Ghi chú</span><input className="field" type="text" value={note} onChange={(event) => setNote(event.target.value)} placeholder="Ví dụ: Hẹn giao cuối tuần" /></label>
+            </div></details>
+          </div>
+          {error && <p role="alert" className="mt-4 rounded-xl bg-red-50 p-3 text-sm font-semibold text-[#a63434]">{error}</p>}
+          {success && <p role="status" className="mt-4 flex items-center gap-2 rounded-xl bg-[#e6f3eb] p-3 text-sm font-semibold text-[#075e4b]"><Check aria-hidden="true" className="h-4 w-4" />{success}</p>}
+          <button type="submit" disabled={saving || insufficient || !product} className="btn-primary mt-5 flex w-full items-center justify-center gap-2">{saving ? <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/50 border-t-white" /> : <Check aria-hidden="true" className="h-5 w-5" />}{saving ? 'Đang lưu đơn…' : 'Lưu đơn bán'}</button>
+          <p className="mt-2 text-center text-xs text-[#71847a]">Đơn được lưu lên Sheet và trừ kho sau khi hoàn tất.</p>
+        </form>
+
+        <section className="surface p-4 sm:p-5">
+          <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
+            <div><p className="eyebrow mb-1">Theo dõi khách hàng</p><h2 className="text-lg font-extrabold">Đơn bán gần đây</h2></div>
+            <label className="relative w-full sm:w-56"><span className="sr-only">Tìm đơn bán</span><Search aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#71847a]" /><input className="field pl-9 text-sm" value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="Tìm khách, số điện thoại…" /></label>
+          </div>
+          {filteredSales.length === 0 ? <p className="rounded-2xl bg-[#f7faf8] p-6 text-center text-sm text-[#60736d]">Chưa có đơn nào khớp với tìm kiếm.</p> : (
+            <div className="space-y-2">
+              {filteredSales.slice(0, 15).map((sale) => {
+                const phone = safePhone(sale.customerPhone);
+                return <article key={sale.id} className="rounded-2xl border border-[#e1ebe3] bg-[#fbfdfb] p-3.5">
+                  <div className="flex items-start justify-between gap-3"><div className="min-w-0"><h3 className="truncate text-sm font-extrabold">{sale.customerName || 'Khách lẻ'}</h3><p className="mt-1 text-xs text-[#60736d]">{dateLabel(sale.date)} · {sale.productName || sale.typeName || 'Tổ yến'} · {Number(sale.weight || 0).toLocaleString('vi-VN')} g</p></div><span className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-bold ${sale.status === 'paid' ? 'bg-[#e7f5eb] text-[#075e4b]' : 'bg-amber-100 text-amber-900'}`}>{sale.status === 'paid' ? 'Đã thu' : 'Ghi nợ'}</span></div>
+                  <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-[#e1ebe3] pt-3">
+                    <div className="flex items-center gap-1">{phone && <><a href={`tel:${phone}`} aria-label={`Gọi ${sale.customerName}`} className="flex min-h-10 items-center gap-1.5 rounded-xl px-2 text-xs font-bold text-[#075e4b] hover:bg-[#e7f5eb]"><Phone aria-hidden="true" className="h-4 w-4" /> Gọi</a><a href={`https://zalo.me/${phone}`} target="_blank" rel="noreferrer" aria-label={`Nhắn Zalo cho ${sale.customerName}`} className="flex min-h-10 items-center gap-1.5 rounded-xl px-2 text-xs font-bold text-[#2563a3] hover:bg-blue-50"><MessageCircle aria-hidden="true" className="h-4 w-4" /> Zalo</a></>}</div>
+                    <div className="flex items-center gap-2">
+                      {canViewFinance && <strong className="font-['Be_Vietnam_Pro'] text-sm tabular-nums">{money(sale.totalAmount)} đ</strong>}
+                      {canViewFinance && <button type="button" disabled={pendingStatusId === sale.id} onClick={() => changeStatus(sale)} aria-label={sale.status === 'paid' ? 'Chuyển đơn sang ghi nợ' : 'Đánh dấu đã thu tiền'} title={sale.status === 'paid' ? 'Chuyển sang ghi nợ' : 'Đã thu tiền'} className="flex h-10 w-10 items-center justify-center rounded-xl text-[#075e4b] hover:bg-[#e7f5eb] disabled:opacity-50"><CircleCheck aria-hidden="true" className="h-5 w-5" /></button>}
+                      {session?.canDeleteRecords && <button type="button" onClick={() => onRequestDelete?.('sale', sale)} aria-label={`Xóa đơn của ${sale.customerName}`} className="flex h-10 w-10 items-center justify-center rounded-xl text-[#b44545] hover:bg-red-50"><Trash2 aria-hidden="true" className="h-4 w-4" /></button>}
+                    </div>
+                  </div>
+                </article>;
+              })}
+            </div>
+          )}
+        </section>
       </div>
     </div>
   );

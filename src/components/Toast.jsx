@@ -34,7 +34,7 @@ export default function Toast({ toast, onClose }) {
   };
 
   return (
-    <div className="fixed bottom-20 left-4 right-4 sm:left-auto sm:right-6 sm:max-w-sm z-50 animate-in fade-in slide-in-from-bottom-4 duration-200">
+    <div className="mobile-toast fixed left-4 right-4 sm:left-auto sm:right-6 sm:max-w-sm z-50 animate-in fade-in slide-in-from-bottom-4 duration-200">
       <div className={`flex items-start gap-3 p-3.5 rounded-2xl border shadow-xl backdrop-blur-md ${config.bg}`}>
         {config.icon}
         <div className="flex-1 min-w-0 pr-1">

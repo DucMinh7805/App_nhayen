@@ -1,293 +1,664 @@
 /**
- * GOOGLE APPS SCRIPT CHO YẾN SÀO MANAGER
- * 
- * HƯỚNG DẪN CẬP NHẬT (MẤT 30 GIÂY):
- * 1. Mở lại Google Apps Script (Tiện ích mở rộng -> Apps Script).
- * 2. Thay toàn bộ code trong file Code.gs bằng code mới dưới đây.
- * 3. Bấm "Lưu" (biểu tượng đĩa mềm hoặc Ctrl+S).
- * 4. Bấm "Triển khai" -> "Quản lý bản triển khai" (Manage deployments):
- *    - Chọn bản triển khai hiện tại, bấm nút cây bút (Edit).
- *    - Ở mục Phiên bản (Version): Chọn "Phiên bản mới" (New version).
- *    - Bấm "Triển khai" (Deploy) để áp dụng code mới (URL không thay đổi).
+ * Google Apps Script cho Quản lý Yến sào Minh Triều.
+ *
+ * Dán mã này vào Code.gs của Apps Script gắn với bảng tính, lưu và triển khai
+ * một phiên bản Web App mới. Triển khai Vercel không tự cập nhật Apps Script.
+ * Mã tự đổi tên bốn tab cũ và tiêu đề cột sang tiếng Việt khi nhận yêu cầu đầu
+ * tiên sau triển khai. setName giữ nguyên sheetId/gid và mọi dòng dữ liệu.
+ * Không cần chạy setupSheet; hàm đó chỉ tạo cấu trúc thiếu, không tạo dữ liệu
+ * mẫu và không xóa tab nào. Các tab cấu hình ít dùng được ẩn, không mất dữ liệu.
  */
 
-const SHEETS = {
-  HOUSES: 'Houses',
-  HARVESTS: 'Harvests',
-  SALES: 'Sales',
-  USERS: 'Users',
+const SCHEMA = {
+  HOUSES: {
+    name: 'Nhà yến', legacy: 'Houses',
+    keys: ['id', 'name', 'address', 'color', 'createdAt', 'isActive'],
+    headers: ['Mã cơ sở', 'Tên cơ sở', 'Địa chỉ', 'Màu', 'Ngày tạo', 'Đang sử dụng'],
+  },
+  HARVESTS: {
+    name: 'Thu hoạch', legacy: 'Harvests',
+    keys: ['id', 'houseId', 'houseName', 'date', 'weight', 'typeId', 'typeName', 'shift', 'note', 'staffName', 'createdAt', 'tagIds'],
+    headers: ['Mã phiếu', 'Mã nhà yến', 'Tên nhà yến', 'Ngày thu hoạch', 'Khối lượng (g)', 'Mã loại tổ', 'Loại tổ', 'Ca thu', 'Ghi chú', 'Người nhập', 'Thời gian tạo', 'Mã nhãn'],
+  },
+  SALES: {
+    name: 'Bán hàng', legacy: 'Sales',
+    keys: ['id', 'houseId', 'houseName', 'date', 'customerName', 'customerPhone', 'weight', 'typeId', 'typeName', 'pricePer100g', 'totalAmount', 'status', 'note', 'staffName', 'createdAt', 'productId', 'productName', 'tagIds'],
+    headers: ['Mã đơn', 'Mã nhà yến', 'Tên nhà yến', 'Ngày bán', 'Khách hàng', 'Số điện thoại', 'Khối lượng (g)', 'Mã loại tổ trong kho', 'Loại tổ trong kho', 'Đơn giá / 100g', 'Thành tiền (VNĐ)', 'Thanh toán', 'Ghi chú', 'Người nhập', 'Thời gian tạo', 'Mã mặt hàng', 'Mặt hàng bán', 'Mã nhãn'],
+  },
+  USERS: {
+    name: 'Tài khoản', legacy: 'Users',
+    keys: ['id', 'username', 'passwordHash', 'name', 'role', 'allowedHouses', 'canViewFinance', 'canExport', 'canDeleteRecords', 'canManageUsers', 'isActive', 'createdAt'],
+    headers: ['Mã tài khoản', 'Tên đăng nhập', 'Mật khẩu (mã bảo vệ)', 'Họ tên', 'Vai trò', 'Nhà yến được quản lý', 'Xem tài chính', 'Xuất báo cáo', 'Xóa phiếu', 'Quản lý tài khoản', 'Đang sử dụng', 'Ngày tạo'],
+  },
+  NEST_TYPES: {
+    name: 'Loại tổ', legacy: 'NestTypes',
+    keys: ['id', 'label', 'shortLabel', 'defaultPricePer100g', 'color', 'isActive', 'sortOrder', 'createdAt', 'updatedAt'],
+    headers: ['Mã loại tổ', 'Tên loại tổ', 'Tên ngắn', 'Giá tham khảo / 100g', 'Màu', 'Đang sử dụng', 'Thứ tự', 'Ngày tạo', 'Ngày sửa'],
+  },
+  PRODUCTS: {
+    name: 'Mặt hàng bán', legacy: 'Products',
+    keys: ['id', 'name', 'stockTypeId', 'pricePer100g', 'isActive', 'sortOrder', 'createdAt', 'updatedAt'],
+    headers: ['Mã mặt hàng', 'Tên mặt hàng bán', 'Mã loại tổ trong kho', 'Giá bán / 100g', 'Đang sử dụng', 'Thứ tự', 'Ngày tạo', 'Ngày sửa'],
+  },
+  TAGS: {
+    name: 'Nhãn', legacy: 'Tags',
+    keys: ['id', 'name', 'color', 'isActive', 'sortOrder', 'createdAt', 'updatedAt'],
+    headers: ['Mã nhãn', 'Tên nhãn', 'Màu', 'Đang sử dụng', 'Thứ tự', 'Ngày tạo', 'Ngày sửa'],
+  },
+  SETTINGS: {
+    name: 'Cài đặt', legacy: 'Settings',
+    keys: ['key', 'value', 'updatedAt'],
+    headers: ['Mã nội dung', 'Nội dung hiển thị', 'Ngày sửa'],
+  },
 };
 
-// ─── HÀM KHỞI TẠO TỰ ĐỘNG CÁC TAB VÀ DỮ LIỆU BAN ĐẦU ─────────────────────
+const DEFAULT_NEST_TYPES = [
+  { id: 'tho_a', label: 'Tổ thô loại A (Chọn)', shortLabel: 'Thô A', defaultPricePer100g: 2900000, color: 'emerald' },
+  { id: 'tho_b', label: 'Tổ thô xô (Loại B)', shortLabel: 'Thô B', defaultPricePer100g: 2400000, color: 'blue' },
+  { id: 'chan_yen', label: 'Chân tổ yến', shortLabel: 'Chân yến', defaultPricePer100g: 2200000, color: 'amber' },
+  { id: 'vun_gay', label: 'Tổ vụn / gãy', shortLabel: 'Vụn gãy', defaultPricePer100g: 1800000, color: 'rose' },
+  { id: 'tinh_che', label: 'Yến tinh chế', shortLabel: 'Tinh chế', defaultPricePer100g: 3800000, color: 'purple' },
+];
+
 function setupSheet() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  ensureSchema_(SpreadsheetApp.getActiveSpreadsheet());
+}
 
-  // 1. Tab Houses
-  let shHouses = ss.getSheetByName(SHEETS.HOUSES);
-  if (!shHouses) {
-    shHouses = ss.insertSheet(SHEETS.HOUSES);
-    shHouses.appendRow(['id', 'name', 'address', 'color', 'createdAt']);
-    shHouses.appendRow(['h1', 'Cửa hàng (Kho chính)', 'Kho trung tâm', 'emerald', '2026-01-01']);
-    shHouses.appendRow(['h2', 'Nhà 1 - Bến Tre', 'Bến Tre', 'blue', '2026-01-01']);
-    shHouses.appendRow(['h3', 'Nhà 2 - Cần Giờ', 'Cần Giờ, TP.HCM', 'amber', '2026-01-01']);
-    shHouses.appendRow(['h4', 'Nhà 3 - Gò Công', 'Tiền Giang', 'purple', '2026-01-01']);
-    shHouses.getRange('A1:E1').setFontWeight('bold').setBackground('#047857').setFontColor('#ffffff');
-  }
-
-  // 2. Tab Harvests
-  let shHarv = ss.getSheetByName(SHEETS.HARVESTS);
-  if (!shHarv) {
-    shHarv = ss.insertSheet(SHEETS.HARVESTS);
-    shHarv.appendRow(['id', 'houseId', 'houseName', 'date', 'weight', 'typeId', 'typeName', 'shift', 'note', 'staffName', 'createdAt']);
-    shHarv.appendRow(['harv_1', 'h1', 'Cửa hàng (Kho chính)', '2026-09-25', 1140, 'tho_a', 'Tổ thô loại A (Chọn)', 'Tổng hôm / Chiều tối', 'Tổng hôm 25/9 (phiếu viết tay)', 'Chủ nhà yến', new Date().toISOString()]);
-    shHarv.getRange('A1:K1').setFontWeight('bold').setBackground('#047857').setFontColor('#ffffff');
-  }
-
-  // 3. Tab Sales
-  let shSales = ss.getSheetByName(SHEETS.SALES);
-  if (!shSales) {
-    shSales = ss.insertSheet(SHEETS.SALES);
-    shSales.appendRow(['id', 'houseId', 'houseName', 'date', 'customerName', 'customerPhone', 'weight', 'typeId', 'typeName', 'pricePer100g', 'totalAmount', 'status', 'note', 'staffName', 'createdAt']);
-    shSales.appendRow(['sale_1', 'h1', 'Cửa hàng (Kho chính)', '2026-09-26', 'Chị Mai - Bình Dương', '0903123456', 300, 'tho_a', 'Tổ thô loại A (Chọn)', 2900000, 8700000, 'paid', 'Giao Viettel Post', 'Chủ nhà yến', new Date().toISOString()]);
-    shSales.getRange('A1:O1').setFontWeight('bold').setBackground('#047857').setFontColor('#ffffff');
-  }
-
-  // 4. Tab Users
-  let shUsers = ss.getSheetByName(SHEETS.USERS);
-  if (!shUsers) {
-    shUsers = ss.insertSheet(SHEETS.USERS);
-    shUsers.appendRow(['id', 'username', 'passwordHash', 'name', 'role', 'allowedHouses', 'canViewFinance', 'canExport', 'canDeleteRecords', 'canManageUsers', 'isActive', 'createdAt']);
-    // Hash chuẩn của admin123
-    shUsers.appendRow(['u_admin', 'admin', '240be518fabd2724ddb6f04eeb1da5967448d7e831c08c8fa822809f74c720a9', 'Chủ nhà yến', 'admin', '', 'TRUE', 'TRUE', 'TRUE', 'TRUE', 'TRUE', new Date().toISOString()]);
-    // Hash chuẩn của quanly123
-    shUsers.appendRow(['u_manager', 'quanly', '2d16797d627b8acdb0ecdd3028102f52b87a73edaed769070fbdc6019f6c8710', 'Quản lý', 'manager', '', 'TRUE', 'TRUE', 'FALSE', 'FALSE', 'TRUE', new Date().toISOString()]);
-    // Hash chuẩn của nv123456
-    shUsers.appendRow(['u_nv1', 'nhanvien1', 'a5d21a2fa99d15d6c13d848008559574fd222b2a51415c72abf3bae221c41f71', 'Nhân viên 1', 'staff', 'h1,h2', 'FALSE', 'FALSE', 'FALSE', 'FALSE', 'TRUE', new Date().toISOString()]);
-    shUsers.getRange('A1:L1').setFontWeight('bold').setBackground('#047857').setFontColor('#ffffff');
-  }
-
-  // Xoá Sheet1 mặc định nếu có
-  const defaultSheet = ss.getSheetByName('Trang tính1') || ss.getSheetByName('Sheet1');
-  if (defaultSheet && ss.getSheets().length > 1) {
-    ss.deleteSheet(defaultSheet);
+function ensureSchema_(ss) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  try {
+    Object.keys(SCHEMA).forEach(key => ensureSheet_(ss, key));
+    seedConfiguration_(ss);
+    const props = PropertiesService.getScriptProperties();
+    if (props.getProperty('MINH_TRIEU_TABS_SIMPLIFIED') !== '1') {
+      ['NEST_TYPES', 'PRODUCTS', 'TAGS', 'SETTINGS'].forEach(key => {
+        const sheet = ss.getSheetByName(SCHEMA[key].name);
+        if (sheet && !sheet.isSheetHidden()) sheet.hideSheet();
+      });
+      props.setProperty('MINH_TRIEU_TABS_SIMPLIFIED', '1');
+    }
+    if (props.getProperty('MINH_TRIEU_VALUES_VI') !== '1') {
+      [
+        { key: 'SALES', column: 12, values: { paid: 'Đã thanh toán', debt: 'Ghi nợ' } },
+        { key: 'USERS', column: 5, values: { admin: 'Chủ nhà', staff: 'Nhân viên' } },
+      ].forEach(spec => {
+        const sheet = ss.getSheetByName(SCHEMA[spec.key].name);
+        if (sheet.getLastRow() <= 1) return;
+        sheet.getRange(2, spec.column, sheet.getLastRow() - 1, 1).getValues()
+          .forEach((row, index) => {
+            const translated = spec.values[String(row[0]).trim().toLowerCase()];
+            if (translated) sheet.getRange(index + 2, spec.column).setValue(translated);
+          });
+      });
+      props.setProperty('MINH_TRIEU_VALUES_VI', '1');
+    }
+  } finally {
+    lock.releaseLock();
   }
 }
 
-// ─── XỬ LÝ GET REQUEST (LẤY DỮ LIỆU) ────────────────────────────────────
-function doGet(e) {
-  const resource = (e && e.parameter && e.parameter.resource) || 'all';
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  let responseData = {};
-
-  if (resource === 'houses' || resource === 'all') {
-    const sh = ss.getSheetByName(SHEETS.HOUSES);
-    responseData.houses = sh ? getSheetRows(sh) : [];
+function ensureSheet_(ss, key) {
+  const spec = SCHEMA[key];
+  let sheet = ss.getSheetByName(spec.name);
+  if (!sheet) {
+    sheet = ss.getSheetByName(spec.legacy);
+    if (sheet) sheet.setName(spec.name); // Giữ nguyên sheetId/gid và dữ liệu.
   }
-  if (resource === 'harvests' || resource === 'all') {
-    const sh = ss.getSheetByName(SHEETS.HARVESTS);
-    responseData.harvests = sh ? getSheetRows(sh) : [];
-  }
-  if (resource === 'sales' || resource === 'all') {
-    const sh = ss.getSheetByName(SHEETS.SALES);
-    responseData.sales = sh ? getSheetRows(sh) : [];
-  }
-  if (resource === 'users' || resource === 'all') {
-    const sh = ss.getSheetByName(SHEETS.USERS);
-    responseData.users = sh ? getSheetRows(sh).map(u => {
-      delete u.passwordHash;
-      return u;
-    }) : [];
+  if (!sheet) sheet = ss.insertSheet(spec.name);
+  if (sheet.getMaxColumns() < spec.headers.length) {
+    sheet.insertColumnsAfter(sheet.getMaxColumns(), spec.headers.length - sheet.getMaxColumns());
   }
 
-  return ContentService.createTextOutput(JSON.stringify(responseData))
+  const existing = sheet.getLastRow() > 0
+    ? sheet.getRange(1, 1, 1, spec.headers.length).getDisplayValues()[0]
+    : [];
+  if (existing.some((value, index) => value !== spec.headers[index]) ||
+      existing.length !== spec.headers.length) {
+    sheet.getRange(1, 1, 1, spec.headers.length).setValues([spec.headers]);
+    sheet.getRange(1, 1, 1, spec.headers.length)
+      .setFontWeight('bold').setBackground('#14645d').setFontColor('#ffffff');
+    sheet.setFrozenRows(1);
+  }
+  return sheet;
+}
+
+function seedConfiguration_(ss) {
+  const types = ss.getSheetByName(SCHEMA.NEST_TYPES.name);
+  if (types.getLastRow() <= 1) {
+    DEFAULT_NEST_TYPES.forEach((type, index) => types.appendRow([
+      type.id, type.label, type.shortLabel, type.defaultPricePer100g,
+      type.color, true, index + 1, new Date().toISOString(), '',
+    ]));
+  }
+  const products = ss.getSheetByName(SCHEMA.PRODUCTS.name);
+  if (products.getLastRow() <= 1) {
+    DEFAULT_NEST_TYPES.forEach((type, index) => products.appendRow([
+      'p_' + type.id, type.label, type.id, type.defaultPricePer100g,
+      true, index + 1, new Date().toISOString(), '',
+    ]));
+  }
+  const settings = ss.getSheetByName(SCHEMA.SETTINGS.name);
+  if (settings.getLastRow() <= 1) {
+    settings.appendRow(['appName', 'Quản lý Yến sào Minh Triều', new Date().toISOString()]);
+  }
+}
+
+function getRows_(ss, key) {
+  const sheet = ss.getSheetByName(SCHEMA[key].name);
+  if (!sheet || sheet.getLastRow() <= 1) return [];
+  const width = SCHEMA[key].keys.length;
+  const raw = sheet.getRange(2, 1, sheet.getLastRow() - 1, width).getValues();
+  const shown = sheet.getRange(2, 1, sheet.getLastRow() - 1, width).getDisplayValues();
+  return raw.map((row, rowIndex) => {
+    const item = {};
+    SCHEMA[key].keys.forEach((field, column) => {
+      const value = row[column];
+      if (['weight', 'pricePer100g', 'totalAmount', 'defaultPricePer100g', 'sortOrder'].indexOf(field) !== -1) {
+        item[field] = numberFromCell_(value);
+      } else if (key === 'SALES' && field === 'status') {
+        item[field] = String(value).trim().toLowerCase() === 'ghi nợ' ? 'debt'
+          : String(value).trim().toLowerCase() === 'đã thanh toán' ? 'paid' : value;
+      } else if (key === 'USERS' && field === 'role') {
+        item[field] = String(value).trim().toLowerCase() === 'chủ nhà' ? 'admin'
+          : String(value).trim().toLowerCase() === 'nhân viên' ? 'staff' : value;
+      } else if (value instanceof Date && field === 'date') {
+        item[field] = Utilities.formatDate(value, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+      } else {
+        item[field] = value instanceof Date ? shown[rowIndex][column] : value;
+      }
+    });
+    return item;
+  }).filter(item => item[SCHEMA[key].keys[0]] !== '');
+}
+
+function numberFromCell_(value) {
+  if (typeof value === 'number') return value;
+  const text = String(value == null ? '' : value).trim().replace(/[^\d.,-]/g, '');
+  if (!text) return 0;
+  const comma = text.lastIndexOf(',');
+  const dot = text.lastIndexOf('.');
+  if (comma !== -1 && dot !== -1) {
+    const decimal = comma > dot ? ',' : '.';
+    const grouping = decimal === ',' ? '.' : ',';
+    return Number(text.split(grouping).join('').replace(decimal, '.')) || 0;
+  }
+  const separator = comma !== -1 ? ',' : dot !== -1 ? '.' : '';
+  if (!separator) return Number(text) || 0;
+  const parts = text.split(separator);
+  if (parts.length > 2 || (parts.length === 2 && parts[1].length === 3 && parts[0].length <= 3)) {
+    return Number(parts.join('')) || 0;
+  }
+  return Number(text.replace(separator, '.')) || 0;
+}
+
+function jsonResponse_(value) {
+  return ContentService.createTextOutput(JSON.stringify(value))
     .setMimeType(ContentService.MimeType.JSON);
 }
 
-// ─── XỬ LÝ POST REQUEST (THÊM / SỬA / XÓA / ĐĂNG NHẬP) ───────────────────
+// Không công bố dữ liệu qua GET. Ứng dụng đọc bằng POST có phiên đăng nhập.
+function doGet() {
+  return jsonResponse_({ success: false, error: 'Vui lòng đăng nhập trong ứng dụng để xem dữ liệu.' });
+}
+
+function hash_(value) {
+  return Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, String(value))
+    .map(byte => (byte < 0 ? byte + 256 : byte).toString(16).padStart(2, '0')).join('');
+}
+
+function secret_() {
+  const props = PropertiesService.getScriptProperties();
+  let value = props.getProperty('MINH_TRIEU_SESSION_SECRET');
+  if (!value) {
+    value = Utilities.getUuid() + Utilities.getUuid() + Utilities.getUuid();
+    props.setProperty('MINH_TRIEU_SESSION_SECRET', value);
+  }
+  return value;
+}
+
+function sign_(unsigned) {
+  return Utilities.base64EncodeWebSafe(
+    Utilities.computeHmacSha256Signature(unsigned, secret_())
+  ).replace(/=+$/, '');
+}
+
+function makeToken_(user) {
+  const data = JSON.stringify({
+    id: String(user.id), issuedAt: Date.now(),
+    passwordVersion: String(user.passwordHash).slice(0, 16),
+  });
+  const unsigned = Utilities.base64EncodeWebSafe(data).replace(/=+$/, '');
+  return unsigned + '.' + sign_(unsigned);
+}
+
+function sameString_(a, b) {
+  if (a.length !== b.length) return false;
+  let mismatch = 0;
+  for (let i = 0; i < a.length; i++) mismatch |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return mismatch === 0;
+}
+
+function signedInUser_(ss, token) {
+  if (!token || typeof token !== 'string') throw new Error('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.');
+  const parts = token.split('.');
+  if (parts.length !== 2 || !sameString_(parts[1], sign_(parts[0]))) {
+    throw new Error('Phiên đăng nhập không hợp lệ. Vui lòng đăng nhập lại.');
+  }
+  const padded = parts[0] + '='.repeat((4 - parts[0].length % 4) % 4);
+  const bytes = Utilities.base64DecodeWebSafe(padded);
+  const payload = JSON.parse(Utilities.newBlob(bytes).getDataAsString());
+  if (!Number.isFinite(Number(payload.issuedAt)) ||
+      Date.now() - Number(payload.issuedAt) > 7 * 24 * 60 * 60 * 1000 ||
+      Number(payload.issuedAt) > Date.now() + 60000) {
+    throw new Error('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.');
+  }
+  const user = getRows_(ss, 'USERS').find(item => String(item.id) === String(payload.id));
+  if (!user || String(user.isActive).toUpperCase() === 'FALSE' ||
+      String(user.passwordHash).slice(0, 16) !== payload.passwordVersion) {
+    throw new Error('Tài khoản hoặc phiên đăng nhập không còn hiệu lực.');
+  }
+  return user;
+}
+
+function requireAdmin_(user) {
+  if (String(user.role) !== 'admin') throw new Error('Chỉ chủ nhà mới có quyền thay đổi mục này.');
+}
+
+function allowedHouses_(user) {
+  if (String(user.role) === 'admin') return null;
+  if (!user.allowedHouses) return [];
+  return String(user.allowedHouses).split(',').map(x => x.trim()).filter(Boolean);
+}
+
+function mayUseHouse_(user, houseId) {
+  if (!houseId) return true; // Đơn bán lấy từ kho duy nhất tại nhà.
+  const allowed = allowedHouses_(user);
+  return allowed === null || allowed.indexOf(String(houseId)) !== -1;
+}
+
+function publicSession_(user) {
+  return {
+    userId: user.id, username: user.username, name: user.name,
+    role: user.role, allowedHouses: allowedHouses_(user),
+    canViewFinance: String(user.role) === 'admin',
+    canExport: String(user.role) === 'admin',
+    canDeleteRecords: String(user.role) === 'admin',
+    canManageUsers: String(user.role) === 'admin',
+    token: makeToken_(user), loginAt: new Date().toISOString(),
+  };
+}
+
+function configuration_(ss) {
+  const nestTypes = getRows_(ss, 'NEST_TYPES').map(item => ({
+    ...item,
+    defaultPricePer100g: Number(item.defaultPricePer100g) || 0,
+    isActive: String(item.isActive).toUpperCase() !== 'FALSE',
+    sortOrder: Number(item.sortOrder) || 0,
+  }));
+  const products = getRows_(ss, 'PRODUCTS').map(item => ({
+    ...item,
+    pricePer100g: Number(item.pricePer100g) || 0,
+    isActive: String(item.isActive).toUpperCase() !== 'FALSE',
+    sortOrder: Number(item.sortOrder) || 0,
+  }));
+  const tags = getRows_(ss, 'TAGS').map(item => ({
+    ...item,
+    isActive: String(item.isActive).toUpperCase() !== 'FALSE',
+    sortOrder: Number(item.sortOrder) || 0,
+  }));
+  const settings = {};
+  getRows_(ss, 'SETTINGS').forEach(item => { settings[String(item.key)] = String(item.value); });
+  return { nestTypes, products, tags, settings };
+}
+
+function readableData_(ss, user, resource) {
+  const isAdmin = String(user.role) === 'admin';
+  const scoped = rows => rows.filter(item => mayUseHouse_(user, item.houseId));
+  const result = { success: true };
+  if (resource === 'all' || resource === 'houses') {
+    result.houses = getRows_(ss, 'HOUSES').filter(item =>
+      String(item.isActive).toUpperCase() !== 'FALSE' && mayUseHouse_(user, item.id)
+    );
+  }
+  if (resource === 'all' || resource === 'harvests') {
+    result.harvests = scoped(getRows_(ss, 'HARVESTS'));
+  }
+  if (resource === 'all' || resource === 'sales') {
+    result.sales = scoped(getRows_(ss, 'SALES')).map(item => isAdmin ? item : {
+      ...item, pricePer100g: 0, totalAmount: 0,
+    });
+  }
+  if (resource === 'all' || resource === 'configuration') {
+    Object.assign(result, configuration_(ss));
+  }
+  if (resource === 'users') {
+    requireAdmin_(user);
+    result.users = getRows_(ss, 'USERS').map(item => {
+      const visible = { ...item };
+      delete visible.passwordHash;
+      return visible;
+    });
+  }
+  if (['all', 'houses', 'harvests', 'sales', 'configuration', 'users'].indexOf(resource) === -1) {
+    throw new Error('Loại dữ liệu không hợp lệ.');
+  }
+  return result;
+}
+
+function safeText_(value, limit) {
+  const text = String(value == null ? '' : value).trim().slice(0, limit || 200);
+  return /^[=+@-]/.test(text) ? "'" + text : text;
+}
+
+function validId_(value) {
+  const id = String(value || '').trim();
+  if (!/^[a-zA-Z0-9_-]{1,80}$/.test(id)) throw new Error('Mã danh mục không hợp lệ.');
+  return id;
+}
+
+function positiveWeight_(value) {
+  const weight = Number(value);
+  if (!Number.isFinite(weight) || weight <= 0 || weight > 100000000) {
+    throw new Error('Khối lượng phải lớn hơn 0.');
+  }
+  return weight;
+}
+
+function nonnegativePrice_(value) {
+  const price = Number(value);
+  if (!Number.isFinite(price) || price < 0 || price > 100000000000) {
+    throw new Error('Đơn giá không hợp lệ.');
+  }
+  return price;
+}
+
+function tagsText_(value) {
+  return (Array.isArray(value) ? value : String(value || '').split(','))
+    .map(item => String(item).trim()).filter(Boolean).map(validId_).join(',');
+}
+
+function findRow_(sheet, id) {
+  const values = sheet.getRange(1, 1, Math.max(sheet.getLastRow(), 1), 1).getValues();
+  for (let row = 2; row <= values.length; row++) {
+    if (String(values[row - 1][0]) === String(id)) return row;
+  }
+  return 0;
+}
+
+function upsertRows_(ss, key, incoming) {
+  const sheet = ss.getSheetByName(SCHEMA[key].name);
+  const columns = SCHEMA[key].keys;
+  incoming.forEach(item => {
+    const id = key === 'SETTINGS' ? item.key : item.id;
+    const rowNumber = findRow_(sheet, id);
+    const old = rowNumber ? getRows_(ss, key).find(row => String(row[columns[0]]) === String(id)) : {};
+    const merged = { ...old, ...item };
+    if (rowNumber && old.createdAt && !item.createdAt) merged.createdAt = old.createdAt;
+    if (!rowNumber && columns.indexOf('createdAt') !== -1 && !merged.createdAt) {
+      merged.createdAt = new Date().toISOString();
+    }
+    const values = columns.map(column => merged[column] == null ? '' : merged[column]);
+    if (rowNumber) sheet.getRange(rowNumber, 1, 1, values.length).setValues([values]);
+    else sheet.appendRow(values);
+  });
+}
+
+function saveConfiguration_(ss, data) {
+  const now = new Date().toISOString();
+  const types = data.nestTypes;
+  const products = data.products;
+  const tags = data.tags;
+  const settings = data.settings;
+  let typeRows;
+  let productRows;
+  let tagRows;
+  let settingRows;
+  const ensureUnique = (rows, field) => {
+    if (new Set(rows.map(row => row[field])).size !== rows.length) {
+      throw new Error('Có mã danh mục bị trùng.');
+    }
+  };
+  if (types !== undefined) {
+    if (!Array.isArray(types) || types.length > 100) throw new Error('Danh sách loại tổ không hợp lệ.');
+    typeRows = types.map((item, index) => ({
+      id: validId_(item.id),
+      label: safeText_(item.label, 100),
+      shortLabel: safeText_(item.shortLabel || item.label, 40),
+      defaultPricePer100g: nonnegativePrice_(item.defaultPricePer100g),
+      color: safeText_(item.color || 'emerald', 20),
+      isActive: item.isActive !== false,
+      sortOrder: Number.isFinite(Number(item.sortOrder)) ? Number(item.sortOrder) : index + 1,
+      createdAt: item.createdAt || '', updatedAt: now,
+    }));
+    if (typeRows.some(row => !row.label)) throw new Error('Loại tổ cần có tên.');
+    ensureUnique(typeRows, 'id');
+  }
+  if (products !== undefined) {
+    if (!Array.isArray(products) || products.length > 500) throw new Error('Danh sách mặt hàng không hợp lệ.');
+    const validTypes = new Set([
+      ...getRows_(ss, 'NEST_TYPES').map(row => String(row.id)),
+      ...(typeRows || []).map(row => row.id),
+    ]);
+    productRows = products.map((item, index) => ({
+      id: validId_(item.id),
+      name: safeText_(item.name, 100),
+      stockTypeId: validId_(item.stockTypeId),
+      pricePer100g: nonnegativePrice_(item.pricePer100g),
+      isActive: item.isActive !== false,
+      sortOrder: Number.isFinite(Number(item.sortOrder)) ? Number(item.sortOrder) : index + 1,
+      createdAt: item.createdAt || '', updatedAt: now,
+    }));
+    if (productRows.some(row => !row.name || !validTypes.has(row.stockTypeId))) {
+      throw new Error('Mặt hàng cần tên và loại tổ trong kho hợp lệ.');
+    }
+    ensureUnique(productRows, 'id');
+  }
+  if (tags !== undefined) {
+    if (!Array.isArray(tags) || tags.length > 200) throw new Error('Danh sách nhãn không hợp lệ.');
+    tagRows = tags.map((item, index) => ({
+      id: validId_(item.id),
+      name: safeText_(item.name, 80),
+      color: safeText_(item.color || 'emerald', 20),
+      isActive: item.isActive !== false,
+      sortOrder: Number.isFinite(Number(item.sortOrder)) ? Number(item.sortOrder) : index + 1,
+      createdAt: item.createdAt || '', updatedAt: now,
+    }));
+    if (tagRows.some(row => !row.name)) throw new Error('Nhãn cần có tên.');
+    ensureUnique(tagRows, 'id');
+  }
+  if (settings !== undefined) {
+    if (!settings || typeof settings !== 'object' || Array.isArray(settings) ||
+        Object.keys(settings).length > 100) throw new Error('Cài đặt không hợp lệ.');
+    settingRows = Object.keys(settings).map(key => {
+      if (!/^[a-zA-Z][a-zA-Z0-9_.-]{0,79}$/.test(key)) throw new Error('Mã nội dung không hợp lệ.');
+      return { key, value: safeText_(settings[key], 250), updatedAt: now };
+    });
+  }
+  if (typeRows) upsertRows_(ss, 'NEST_TYPES', typeRows);
+  if (productRows) upsertRows_(ss, 'PRODUCTS', productRows);
+  if (tagRows) upsertRows_(ss, 'TAGS', tagRows);
+  if (settingRows) upsertRows_(ss, 'SETTINGS', settingRows);
+  return configuration_(ss);
+}
+
 function doPost(e) {
   try {
     const payload = JSON.parse(e.postData.contents);
-    const action = payload.action;
+    const action = String(payload.action || '');
     const ss = SpreadsheetApp.getActiveSpreadsheet();
+    ensureSchema_(ss);
 
-    // 1. ĐĂNG NHẬP (Tự động nhận diện mật khẩu mặc định & chuẩn hoá hash)
     if (action === 'login') {
-      const sh = ss.getSheetByName(SHEETS.USERS);
-      const users = getSheetRows(sh);
-      const user = users.find(u => String(u.username).toLowerCase() === String(payload.username).toLowerCase() && String(u.isActive) !== 'FALSE');
-
-      if (!user) {
-        return jsonResponse({ success: false, error: 'Tài khoản không tồn tại hoặc bị vô hiệu' });
+      const user = getRows_(ss, 'USERS').find(item =>
+        String(item.username).toLowerCase() === String(payload.username || '').trim().toLowerCase() &&
+        String(item.isActive).toUpperCase() !== 'FALSE'
+      );
+      if (!user || !payload.password || hash_(payload.password) !== String(user.passwordHash)) {
+        throw new Error('Tên đăng nhập hoặc mật khẩu không đúng.');
       }
+      return jsonResponse_({ success: true, session: publicSession_(user) });
+    }
 
-      // Hash SHA-256 từ password người dùng nhập
-      const hash = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, payload.password)
-        .map(b => (b < 0 ? b + 256 : b).toString(16).padStart(2, '0')).join('');
+    const user = signedInUser_(ss, payload.token);
+    if (action === 'getData') {
+      return jsonResponse_(readableData_(ss, user, String(payload.resource || 'all')));
+    }
 
-      // Cho phép đăng nhập nếu khớp hash HOẶC đúng mật khẩu mặc định của các tài khoản mẫu
-      const isMatch = (hash === user.passwordHash) ||
-                      (payload.username === 'admin' && payload.password === 'admin123') ||
-                      (payload.username === 'quanly' && payload.password === 'quanly123') ||
-                      (payload.username === 'nhanvien1' && payload.password === 'nv123456');
-
-      if (!isMatch) {
-        return jsonResponse({ success: false, error: 'Mật khẩu không đúng' });
+    const lock = LockService.getScriptLock();
+    lock.waitLock(10000);
+    try {
+      if (action === 'saveConfiguration') {
+        requireAdmin_(user);
+        return jsonResponse_({ success: true, ...saveConfiguration_(ss, payload.data || {}) });
       }
-
-      // Tự động chuẩn hoá hash trong Sheet nếu đang dùng hash cũ
-      if (hash !== user.passwordHash) {
-        const fullData = sh.getDataRange().getValues();
-        for (let i = 1; i < fullData.length; i++) {
-          if (String(fullData[i][0]) === String(user.id)) {
-            sh.getRange(i + 1, 3).setValue(hash);
-            break;
-          }
+      if (action === 'saveHouses') {
+        requireAdmin_(user);
+        const houses = payload.houses;
+        if (!Array.isArray(houses) || houses.length === 0 || houses.length > 100) {
+          throw new Error('Danh sách nhà yến không hợp lệ.');
         }
+        const retainedIds = new Set(houses.map(house => validId_(house.id)));
+        upsertRows_(ss, 'HOUSES', houses.map(house => ({
+          id: validId_(house.id),
+          name: safeText_(house.name, 100),
+          address: safeText_(house.address, 200),
+          color: safeText_(house.color || 'emerald', 20),
+          isActive: true,
+        })));
+        upsertRows_(ss, 'HOUSES', getRows_(ss, 'HOUSES')
+          .filter(house => !retainedIds.has(String(house.id)))
+          .map(house => ({ id: house.id, isActive: false })));
+        return jsonResponse_({ success: true, houses: getRows_(ss, 'HOUSES')
+          .filter(house => String(house.isActive).toUpperCase() !== 'FALSE') });
       }
-
-      const session = {
-        userId: user.id,
-        username: user.username,
-        name: user.name,
-        role: user.role,
-        allowedHouses: user.allowedHouses ? String(user.allowedHouses).split(',').map(s => s.trim()).filter(Boolean) : null,
-        canViewFinance: String(user.canViewFinance).toUpperCase() === 'TRUE',
-        canExport: String(user.canExport).toUpperCase() === 'TRUE',
-        canDeleteRecords: String(user.canDeleteRecords).toUpperCase() === 'TRUE',
-        canManageUsers: String(user.canManageUsers).toUpperCase() === 'TRUE',
-        loginAt: new Date().toISOString()
-      };
-      return jsonResponse({ success: true, session: session });
-    }
-
-    // 2. THÊM PHIẾU THU HOẠCH
-    if (action === 'addHarvest') {
-      const sh = ss.getSheetByName(SHEETS.HARVESTS);
-      const h = payload.data;
-      sh.appendRow([
-        h.id, h.houseId, h.houseName, String(h.date).slice(0, 10),
-        Number(h.weight), h.typeId, h.typeName, h.shift,
-        h.note || '', h.staffName || '', h.createdAt || new Date().toISOString()
-      ]);
-      return jsonResponse({ success: true, data: h });
-    }
-
-    // 3. XÓA PHIẾU THU HOẠCH
-    if (action === 'deleteHarvest') {
-      deleteRowById(ss.getSheetByName(SHEETS.HARVESTS), payload.id);
-      return jsonResponse({ success: true });
-    }
-
-    // 4. THÊM ĐƠN BÁN
-    if (action === 'addSale') {
-      const sh = ss.getSheetByName(SHEETS.SALES);
-      const s = payload.data;
-      // Prepend ' cho SĐT để Google Sheet lưu dạng text, không bị mất số 0 đầu
-      const phoneText = s.customerPhone ? ("'" + String(s.customerPhone).replace(/^'/, '')) : '';
-      sh.appendRow([
-        s.id, s.houseId, s.houseName, String(s.date).slice(0, 10),
-        s.customerName, phoneText, Number(s.weight), s.typeId, s.typeName,
-        Number(s.pricePer100g || 0), Number(s.totalAmount || 0), s.status || 'paid',
-        s.note || '', s.staffName || '', s.createdAt || new Date().toISOString()
-      ]);
-      return jsonResponse({ success: true, data: s });
-    }
-
-    // 5. XÓA ĐƠN BÁN
-    if (action === 'deleteSale') {
-      deleteRowById(ss.getSheetByName(SHEETS.SALES), payload.id);
-      return jsonResponse({ success: true });
-    }
-
-    // 6. CẬP NHẬT TRẠNG THÁI BÁN (paid/debt)
-    if (action === 'updateSaleStatus') {
-      const sh = ss.getSheetByName(SHEETS.SALES);
-      const data = sh.getDataRange().getValues();
-      for (let i = 1; i < data.length; i++) {
-        if (String(data[i][0]) === String(payload.id)) {
-          sh.getRange(i + 1, 12).setValue(payload.status);
-          break;
+      if (action === 'addHarvest') {
+        const h = payload.data || {};
+        if (!mayUseHouse_(user, h.houseId)) throw new Error('Không được nhập liệu cho nhà yến này.');
+        const sheet = ss.getSheetByName(SCHEMA.HARVESTS.name);
+        if (findRow_(sheet, h.id)) throw new Error('Phiếu này đã được lưu.');
+        const type = configuration_(ss).nestTypes.find(item => String(item.id) === String(h.typeId));
+        if (!type || !type.isActive) throw new Error('Loại tổ không còn sử dụng.');
+        const house = getRows_(ss, 'HOUSES').find(item => String(item.id) === String(h.houseId));
+        if (!house) throw new Error('Không tìm thấy nhà yến.');
+        sheet.appendRow([
+          validId_(h.id), house.id, safeText_(house.name, 100), String(h.date || '').slice(0, 10),
+          positiveWeight_(h.weight), type.id, safeText_(type.label, 100), safeText_(h.shift, 80),
+          safeText_(h.note, 500), safeText_(user.name, 100), h.createdAt || new Date().toISOString(),
+          tagsText_(h.tagIds),
+        ]);
+        return jsonResponse_({ success: true });
+      }
+      if (action === 'deleteHarvest') {
+        requireAdmin_(user);
+        deleteRowById_(ss.getSheetByName(SCHEMA.HARVESTS.name), payload.id);
+        return jsonResponse_({ success: true });
+      }
+      if (action === 'addSale') {
+        const s = payload.data || {};
+        if (s.houseId && !mayUseHouse_(user, s.houseId)) {
+          throw new Error('Không được bán hàng tại nhà yến này.');
         }
+        const sheet = ss.getSheetByName(SCHEMA.SALES.name);
+        if (findRow_(sheet, s.id)) throw new Error('Đơn này đã được lưu.');
+        const config = configuration_(ss);
+        const product = config.products.find(item => String(item.id) === String(s.productId)) ||
+          config.products.find(item => String(item.stockTypeId) === String(s.typeId) && item.isActive);
+        if (!product || !product.isActive) throw new Error('Mặt hàng không còn sử dụng.');
+        const type = config.nestTypes.find(item => String(item.id) === String(product.stockTypeId));
+        if (!type) throw new Error('Loại tổ trong kho không tồn tại.');
+        const house = s.houseId
+          ? getRows_(ss, 'HOUSES').find(item => String(item.id) === String(s.houseId))
+          : { id: '', name: 'Kho tại nhà' };
+        if (!house) throw new Error('Không tìm thấy nhà yến.');
+        const customerName = safeText_(s.customerName, 150);
+        if (!customerName) throw new Error('Vui lòng nhập tên khách hàng.');
+        const weight = positiveWeight_(s.weight);
+        const stock = getRows_(ss, 'HARVESTS').filter(item => String(item.typeId) === String(type.id))
+          .reduce((total, item) => total + Number(item.weight || 0), 0) -
+          getRows_(ss, 'SALES').filter(item => String(item.typeId) === String(type.id))
+            .reduce((total, item) => total + Number(item.weight || 0), 0);
+        if (weight > stock) throw new Error('Số lượng bán vượt quá số tổ còn trong kho.');
+        const price = String(user.role) === 'admin' && s.pricePer100g !== undefined
+          ? nonnegativePrice_(s.pricePer100g) : product.pricePer100g;
+        const amount = Math.round(weight / 100 * price);
+        const phone = String(s.customerPhone || '').trim().replace(/^'/, '').slice(0, 30);
+        sheet.appendRow([
+          validId_(s.id), house.id, safeText_(house.name, 100), String(s.date || '').slice(0, 10),
+          customerName, phone ? "'" + phone : '', weight,
+          type.id, safeText_(type.label, 100), price, amount,
+          s.status === 'debt' ? 'Ghi nợ' : 'Đã thanh toán', safeText_(s.note, 500),
+          safeText_(user.name, 100), s.createdAt || new Date().toISOString(),
+          product.id, safeText_(product.name, 100), tagsText_(s.tagIds),
+        ]);
+        return jsonResponse_({ success: true, data: { pricePer100g: price, totalAmount: amount } });
       }
-      return jsonResponse({ success: true });
-    }
-
-    // 7. THÊM NGƯỜI DÙNG
-    if (action === 'addUser') {
-      const sh = ss.getSheetByName(SHEETS.USERS);
-      const u = payload.data;
-      const hash = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, u.password)
-        .map(b => (b < 0 ? b + 256 : b).toString(16).padStart(2, '0')).join('');
-      sh.appendRow([
-        u.id, u.username, hash, u.name, u.role,
-        Array.isArray(u.allowedHouses) ? u.allowedHouses.join(',') : (u.allowedHouses || ''),
-        u.canViewFinance ? 'TRUE' : 'FALSE',
-        u.canExport ? 'TRUE' : 'FALSE',
-        u.canDeleteRecords ? 'TRUE' : 'FALSE',
-        u.canManageUsers ? 'TRUE' : 'FALSE',
-        'TRUE',
-        new Date().toISOString()
-      ]);
-      return jsonResponse({ success: true });
-    }
-
-    // 8. ĐỔI MẬT KHẨU
-    if (action === 'changePassword') {
-      const sh = ss.getSheetByName(SHEETS.USERS);
-      const data = sh.getDataRange().getValues();
-      const oldHash = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, payload.oldPassword)
-        .map(b => (b < 0 ? b + 256 : b).toString(16).padStart(2, '0')).join('');
-      const newHash = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, payload.newPassword)
-        .map(b => (b < 0 ? b + 256 : b).toString(16).padStart(2, '0')).join('');
-
-      for (let i = 1; i < data.length; i++) {
-        if (String(data[i][0]) === String(payload.userId)) {
-          if (data[i][2] !== oldHash) {
-            return jsonResponse({ success: false, error: 'Mật khẩu cũ không đúng' });
-          }
-          sh.getRange(i + 1, 3).setValue(newHash);
-          return jsonResponse({ success: true });
+      if (action === 'deleteSale') {
+        requireAdmin_(user);
+        deleteRowById_(ss.getSheetByName(SCHEMA.SALES.name), payload.id);
+        return jsonResponse_({ success: true });
+      }
+      if (action === 'updateSaleStatus') {
+        requireAdmin_(user);
+        const sheet = ss.getSheetByName(SCHEMA.SALES.name);
+        const row = findRow_(sheet, payload.id);
+        if (!row) throw new Error('Không tìm thấy đơn bán.');
+        if (['paid', 'debt'].indexOf(payload.status) === -1) throw new Error('Trạng thái không hợp lệ.');
+        sheet.getRange(row, 12).setValue(payload.status === 'debt' ? 'Ghi nợ' : 'Đã thanh toán');
+        return jsonResponse_({ success: true });
+      }
+      if (action === 'setUserActive') {
+        requireAdmin_(user);
+        const sheet = ss.getSheetByName(SCHEMA.USERS.name);
+        const target = getRows_(ss, 'USERS').find(item => String(item.id) === String(payload.id));
+        if (!target) throw new Error('Không tìm thấy tài khoản.');
+        if (String(target.id) === String(user.id) || String(target.role) === 'admin') {
+          throw new Error('Không thể thay đổi trạng thái tài khoản chủ nhà.');
         }
+        if (typeof payload.isActive !== 'boolean') throw new Error('Trạng thái tài khoản không hợp lệ.');
+        sheet.getRange(findRow_(sheet, target.id), 11).setValue(payload.isActive);
+        const updated = { ...target, isActive: payload.isActive };
+        delete updated.passwordHash;
+        return jsonResponse_({ success: true, user: updated });
       }
-      return jsonResponse({ success: false, error: 'Không tìm thấy tài khoản' });
+      if (action === 'addUser') {
+        requireAdmin_(user);
+        const u = payload.data || {};
+        const sheet = ss.getSheetByName(SCHEMA.USERS.name);
+        if (getRows_(ss, 'USERS').some(item =>
+          String(item.username).toLowerCase() === String(u.username).toLowerCase()
+        )) throw new Error('Tên đăng nhập đã tồn tại.');
+        if (String(u.password || '').length < 8) throw new Error('Mật khẩu cần ít nhất 8 ký tự.');
+        const role = u.role === 'admin' ? 'admin' : 'staff';
+        sheet.appendRow([
+          validId_(u.id), safeText_(u.username, 80), hash_(u.password), safeText_(u.name, 100),
+          role === 'admin' ? 'Chủ nhà' : 'Nhân viên', tagsText_(u.allowedHouses), role === 'admin', role === 'admin',
+          role === 'admin', role === 'admin', true, new Date().toISOString(),
+        ]);
+        return jsonResponse_({ success: true });
+      }
+      if (action === 'changePassword') {
+        if (String(payload.userId) !== String(user.id)) throw new Error('Chỉ được đổi mật khẩu của chính bạn.');
+        if (hash_(payload.oldPassword || '') !== String(user.passwordHash)) {
+          throw new Error('Mật khẩu cũ không đúng.');
+        }
+        if (String(payload.newPassword || '').length < 8) throw new Error('Mật khẩu mới cần ít nhất 8 ký tự.');
+        const sheet = ss.getSheetByName(SCHEMA.USERS.name);
+        sheet.getRange(findRow_(sheet, user.id), 3).setValue(hash_(payload.newPassword));
+        const updated = getRows_(ss, 'USERS').find(item => String(item.id) === String(user.id));
+        return jsonResponse_({ success: true, session: publicSession_(updated) });
+      }
+      throw new Error('Hành động không hợp lệ.');
+    } finally {
+      lock.releaseLock();
     }
-
-    return jsonResponse({ success: false, error: 'Hành động không hợp lệ: ' + action });
-  } catch (err) {
-    return jsonResponse({ success: false, error: err.toString() });
+  } catch (error) {
+    return jsonResponse_({ success: false, error: String(error.message || error) });
   }
 }
 
-// ─── HÀM TIỆN ÍCH: ĐỌC DỮ LIỆU BẢNG BẰNG DISPLAY VALUES ───────────────────
-function getSheetRows(sheet) {
-  const displayData = sheet.getDataRange().getDisplayValues();
-  if (displayData.length <= 1) return [];
-  const headers = displayData[0];
-  const rows = [];
-  for (let i = 1; i < displayData.length; i++) {
-    const row = displayData[i];
-    if (!row[0]) continue;
-    const obj = {};
-    for (let j = 0; j < headers.length; j++) {
-      obj[headers[j]] = row[j];
-    }
-    rows.push(obj);
-  }
-  return rows;
-}
-
-function deleteRowById(sheet, id) {
-  const data = sheet.getDataRange().getValues();
-  for (let i = 1; i < data.length; i++) {
-    if (String(data[i][0]) === String(id)) {
-      sheet.deleteRow(i + 1);
-      return true;
-    }
-  }
-  return false;
-}
-
-function jsonResponse(obj) {
-  return ContentService.createTextOutput(JSON.stringify(obj))
-    .setMimeType(ContentService.MimeType.JSON);
+function deleteRowById_(sheet, id) {
+  const row = findRow_(sheet, id);
+  if (!row) throw new Error('Không tìm thấy phiếu cần xóa.');
+  sheet.deleteRow(row);
 }
