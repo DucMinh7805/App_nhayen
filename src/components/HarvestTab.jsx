@@ -26,6 +26,9 @@ export default function HarvestTab({
   const [shift, setShift] = useState(draft.shift || SHIFTS[0].label);
   const [note, setNote] = useState(draft.note || '');
   const [tagIds, setTagIds] = useState(draft.tagIds || '');
+  const [pendingId, setPendingId] = useState(
+    draft.pendingUserId === session?.userId ? draft.pendingId || '' : ''
+  );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -37,8 +40,10 @@ export default function HarvestTab({
   const todayWeight = houseHarvests.filter((item) => item.date === date).reduce((sum, item) => sum + Number(item.weight || 0), 0);
 
   useEffect(() => {
-    localStorage.setItem(DRAFT_KEY, JSON.stringify({ date, weight, typeId, shift, note, tagIds }));
-  }, [date, weight, typeId, shift, note, tagIds]);
+    try {
+      localStorage.setItem(DRAFT_KEY, JSON.stringify({ date, weight, typeId, shift, note, tagIds, pendingId, pendingUserId: session?.userId }));
+    } catch { /* Lưu nháp trên máy là tùy chọn; phiếu chính vẫn phải ghi vào Sheet. */ }
+  }, [date, weight, typeId, shift, note, tagIds, pendingId, session?.userId]);
 
   useEffect(() => {
     if (!nestTypes.some((item) => item.id === typeId && item.isActive !== false) && activeTypes.length) {
@@ -57,8 +62,13 @@ export default function HarvestTab({
     if (!Number.isFinite(grams) || grams <= 0) { setError('Nhập khối lượng lớn hơn 0 gram.'); return; }
     setSaving(true);
     try {
+      const recordId = pendingId || `harv_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+      setPendingId(recordId);
+      try {
+        localStorage.setItem(DRAFT_KEY, JSON.stringify({ date, weight, typeId, shift, note, tagIds, pendingId: recordId, pendingUserId: session?.userId }));
+      } catch { /* Không ảnh hưởng đến lần gửi hiện tại. */ }
       const record = {
-        id: `harv_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+        id: recordId,
         houseId: activeHouse.id,
         houseName: activeHouse.name,
         date,
@@ -71,11 +81,18 @@ export default function HarvestTab({
         staffName: session?.name || 'Người nhập',
         createdAt: new Date().toISOString(),
       };
-      await onAddHarvest(record);
+      const saved = await onAddHarvest(record);
+      setPendingId('');
+      if (saved._recoveredFromSheet && saved._inputMatches === false) {
+        setError('Phiếu gửi trước đã lưu vào Sheet với thông tin khác. Hãy kiểm tra Lịch sử; nếu đây là phiếu mới, bấm Lưu lần nữa.');
+        return;
+      }
       setWeight('');
       setNote('');
       setTagIds('');
-      setSuccess(`Đã lưu ${grams.toLocaleString('vi-VN')} g vào Google Sheet.`);
+      setSuccess(saved._recoveredFromSheet
+        ? 'Phiếu từ lần gửi trước đã có trong Google Sheet. Hãy kiểm tra Lịch sử.'
+        : `Đã lưu ${Number(saved.weight).toLocaleString('vi-VN')} g vào Google Sheet.`);
     } catch (err) {
       setError(err.message || 'Chưa thể lưu phiếu. Kiểm tra kết nối rồi thử lại.');
     } finally {

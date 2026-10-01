@@ -38,6 +38,9 @@ export default function SalesTab({
   const [status, setStatus] = useState(draft.status || 'paid');
   const [note, setNote] = useState(draft.note || '');
   const [tagIds, setTagIds] = useState(draft.tagIds || '');
+  const [pendingId, setPendingId] = useState(
+    draft.pendingUserId === session?.userId ? draft.pendingId || '' : ''
+  );
   const [searchQuery, setSearchQuery] = useState('');
   const [saving, setSaving] = useState(false);
   const [pendingStatusId, setPendingStatusId] = useState('');
@@ -55,8 +58,10 @@ export default function SalesTab({
   const canViewFinance = session?.role === 'admin';
 
   useEffect(() => {
-    localStorage.setItem(DRAFT_KEY, JSON.stringify({ productId, customerName, customerPhone, weight, pricePer100g, status, note, tagIds }));
-  }, [productId, customerName, customerPhone, weight, pricePer100g, status, note, tagIds]);
+    try {
+      localStorage.setItem(DRAFT_KEY, JSON.stringify({ productId, customerName, customerPhone, weight, pricePer100g, status, note, tagIds, pendingId, pendingUserId: session?.userId }));
+    } catch { /* Nháp trên máy không thay thế dữ liệu đã lưu vào Sheet. */ }
+  }, [productId, customerName, customerPhone, weight, pricePer100g, status, note, tagIds, pendingId, session?.userId]);
 
   useEffect(() => {
     if (catalog.length && !catalog.some((item) => item.id === productId)) {
@@ -82,8 +87,13 @@ export default function SalesTab({
     if (insufficient) { setError(`Kho chỉ còn ${stock.toLocaleString('vi-VN')} g ${product.name}. Hãy giảm số lượng bán.`); return; }
     setSaving(true);
     try {
+      const saleId = pendingId || newSaleId();
+      setPendingId(saleId);
+      try {
+        localStorage.setItem(DRAFT_KEY, JSON.stringify({ productId, customerName, customerPhone, weight, pricePer100g, status, note, tagIds, pendingId: saleId, pendingUserId: session?.userId }));
+      } catch { /* Không ảnh hưởng đến lần gửi hiện tại. */ }
       const sale = {
-        id: newSaleId(),
+        id: saleId,
         houseId: '',
         houseName: 'Kho tại nhà',
         date: localToday(),
@@ -103,13 +113,21 @@ export default function SalesTab({
         staffName: session?.name || 'Người bán',
         createdAt: nowIso(),
       };
-      await onAddSale(sale);
+      const saved = await onAddSale(sale);
+      setPendingId('');
+      if (saved._recoveredFromSheet &&
+        (saved._inputMatches === false || (canViewFinance && Number(saved.pricePer100g) !== Number(pricePer100g)))) {
+        setError('Đơn gửi trước đã lưu vào Sheet với thông tin khác. Hãy kiểm tra Lịch sử; nếu đây là đơn mới, bấm Lưu lần nữa.');
+        return;
+      }
       setCustomerName('');
       setCustomerPhone('');
       setWeight('');
       setNote('');
       setTagIds('');
-      setSuccess('Đã lưu đơn bán vào Google Sheet và trừ tồn kho.');
+      setSuccess(saved._recoveredFromSheet
+        ? 'Đơn từ lần gửi trước đã có trong Google Sheet. Hãy kiểm tra Lịch sử.'
+        : 'Đã lưu đơn bán vào Google Sheet và trừ tồn kho.');
     } catch (err) {
       setError(err.message || 'Chưa thể lưu đơn. Kiểm tra kết nối rồi thử lại.');
     } finally {

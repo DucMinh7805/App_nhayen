@@ -95,6 +95,53 @@ async function scriptGet(resource = 'all', retryOnTimeout = false) {
   }
 }
 
+// A timed-out request may already have reached Sheet. Read back the same ID
+// before reporting failure; the form keeps that ID for a safe retry.
+async function reconcileEntry(resource, entry, error, matches) {
+  const uncertain = error?.code === 'SHEET_TIMEOUT' || error instanceof TypeError ||
+    /đã được lưu|đã tồn tại/i.test(String(error?.message || ''));
+  if (!uncertain) throw error;
+  try {
+    const response = await scriptGet(resource, true);
+    const saved = response[resource]?.find((item) => String(item.id) === String(entry.id));
+    if (saved) return {
+      ...entry,
+      ...saved,
+      _recoveredFromSheet: true,
+      _inputMatches: matches(entry, saved),
+    };
+  } catch {
+    // Keep the original error. Retrying with the same ID cannot create a
+    // second copy if the first request was saved.
+  }
+  throw error;
+}
+
+const sameText = (input, saved) => String(input || '').trim() === String(saved || '').trim();
+const sameTags = (input, saved) =>
+  String(input || '').split(',').map((tag) => tag.trim()).filter(Boolean).join(',') ===
+  String(saved || '').split(',').map((tag) => tag.trim()).filter(Boolean).join(',');
+
+const sameHarvest = (input, saved) =>
+  String(input.houseId) === String(saved.houseId) &&
+  String(input.date).slice(0, 10) === String(saved.date).slice(0, 10) &&
+  Number(input.weight) === Number(saved.weight) &&
+  String(input.typeId) === String(saved.typeId) &&
+  sameText(input.shift, saved.shift) &&
+  sameText(input.note, saved.note) &&
+  sameTags(input.tagIds, saved.tagIds);
+
+const sameSale = (input, saved) =>
+  sameText(input.customerName, saved.customerName) &&
+  sameText(input.customerPhone, String(saved.customerPhone || '').replace(/^'/, '')) &&
+  String(input.date).slice(0, 10) === String(saved.date).slice(0, 10) &&
+  Number(input.weight) === Number(saved.weight) &&
+  String(input.typeId) === String(saved.typeId) &&
+  String(input.productId) === String(saved.productId) &&
+  String(input.status) === String(saved.status) &&
+  sameText(input.note, saved.note) &&
+  sameTags(input.tagIds, saved.tagIds);
+
 // ─── RE-EXPORTS TỪ AUTH ─────────────────────────────────────────────────────
 export { hashPassword, getSession, logout, canAccessHouse, checkPermission } from './auth';
 
@@ -251,11 +298,15 @@ export async function getHarvests() {
 }
 
 export async function addHarvest(harvest) {
-  // Ghi nhận ngầm lên Google Sheet
-  await scriptPost('addHarvest', { data: harvest });
+  let saved = harvest;
+  try {
+    await scriptPost('addHarvest', { data: harvest });
+  } catch (error) {
+    saved = await reconcileEntry('harvests', harvest, error, sameHarvest);
+  }
   const current = getCache(CACHE_KEYS.HARVESTS, []);
-  setCache(CACHE_KEYS.HARVESTS, [harvest, ...current]);
-  return harvest;
+  setCache(CACHE_KEYS.HARVESTS, [saved, ...current.filter((item) => String(item.id) !== String(saved.id))]);
+  return saved;
 }
 
 export async function deleteHarvest(id) {
@@ -274,10 +325,15 @@ export async function getSales() {
 }
 
 export async function addSale(sale) {
-  const res = await scriptPost('addSale', { data: sale });
-  const saved = { ...sale, ...(res.data || {}) };
+  let saved;
+  try {
+    const res = await scriptPost('addSale', { data: sale });
+    saved = { ...sale, ...(res.data || {}) };
+  } catch (error) {
+    saved = await reconcileEntry('sales', sale, error, sameSale);
+  }
   const current = getCache(CACHE_KEYS.SALES, []);
-  setCache(CACHE_KEYS.SALES, [saved, ...current]);
+  setCache(CACHE_KEYS.SALES, [saved, ...current.filter((item) => String(item.id) !== String(saved.id))]);
   return saved;
 }
 

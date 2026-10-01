@@ -113,14 +113,18 @@ export default function App() {
   const addHarvestRecord = async (record) => {
     if (!canAccessHouse(session, record.houseId)) throw new Error('Bạn không có quyền nhập cho nhà yến này.');
     const saved = await addHarvest(record);
-    setHarvests((current) => [saved, ...current]);
-    showToast(`Đã lưu ${Number(saved.weight).toLocaleString('vi-VN')} g thu hoạch vào Sheet.`);
+    setHarvests((current) => [saved, ...current.filter((item) => String(item.id) !== String(saved.id))]);
+    showToast(saved._recoveredFromSheet
+      ? 'Phiếu đã có trong Google Sheet từ lần gửi trước. Hãy kiểm tra Lịch sử.'
+      : `Đã lưu ${Number(saved.weight).toLocaleString('vi-VN')} g thu hoạch vào Sheet.`);
     return saved;
   };
   const addSaleRecord = async (record) => {
     const saved = await addSale(record);
-    setSales((current) => [saved, ...current]);
-    showToast('Đã lưu đơn bán và cập nhật kho.');
+    setSales((current) => [saved, ...current.filter((item) => String(item.id) !== String(saved.id))]);
+    showToast(saved._recoveredFromSheet
+      ? 'Đơn đã có trong Google Sheet từ lần gửi trước. Hãy kiểm tra Lịch sử.'
+      : 'Đã lưu đơn bán và cập nhật kho.');
     return saved;
   };
   const deleteHarvestRecord = async (id) => {
