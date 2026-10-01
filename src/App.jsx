@@ -33,7 +33,7 @@ export default function App() {
   const [tags, setTags] = useState([]);
   const [settings, setSettings] = useState({});
   const [activeHouseId, setActiveHouseId] = useState('');
-  const [activeTab, setActiveTab] = useState(() => getSession()?.role === 'admin' ? 'dashboard' : 'harvest');
+  const [activeTab, setActiveTab] = useState('dashboard');
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [syncStatus, setSyncStatus] = useState('loading');
   const [lastSyncedAt, setLastSyncedAt] = useState(null);
@@ -201,7 +201,7 @@ export default function App() {
   const renderContent = () => {
     switch (activeTab) {
       case 'dashboard':
-        return <DashboardTab houses={visibleHouses} harvests={harvests.filter((item) => canAccessHouse(session, item.houseId))} sales={sales} inventoryData={inventoryData} session={session} />;
+        return <DashboardTab houses={visibleHouses} harvests={harvests.filter((item) => canAccessHouse(session, item.houseId))} sales={sales} inventoryData={inventoryData} session={session} settings={settings} onNavigate={selectTab} />;
       case 'harvest':
         return <HarvestTab activeHouse={activeHouse} houses={visibleHouses} onSelectHouse={(house) => setActiveHouseId(house?.id || '')} session={session} harvests={harvests.filter((item) => canAccessHouse(session, item.houseId))} nestTypes={nestTypes} tags={tags} onAddHarvest={addHarvestRecord} onNavigateToHistory={() => selectTab('history')} onRequestDelete={requestDelete} />;
       case 'sales':
@@ -224,7 +224,7 @@ export default function App() {
   if (!session) {
     return <LoginScreen onLoginSuccess={(nextSession) => {
       setSession(nextSession);
-      setActiveTab(nextSession.role === 'admin' ? 'dashboard' : 'harvest');
+      setActiveTab('dashboard');
       setSyncStatus('loading');
       showToast(`Xin chào ${nextSession.name}.`);
     }} />;

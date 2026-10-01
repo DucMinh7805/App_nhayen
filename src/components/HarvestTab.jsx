@@ -86,10 +86,10 @@ export default function HarvestTab({
   return (
     <div className="page-enter grid gap-5 xl:grid-cols-[minmax(0,1.28fr)_minmax(310px,.72fr)]">
       <form onSubmit={submit} className="surface p-4 sm:p-6">
-        <div className="mb-5 flex items-start justify-between gap-3">
+        <div className="mb-4 flex items-start justify-between gap-3">
           <div>
-            <p className="eyebrow mb-1">Ghi sản lượng</p>
-            <h2 className="text-xl font-extrabold text-[#18312d]">Thêm phiếu thu hoạch</h2>
+            <h2 className="text-lg font-extrabold text-[#18312d] sm:text-xl">Ghi thu hoạch</h2>
+            <p className="mt-1 text-sm text-[#60736d]">Chọn nhà, nhập số gram rồi lưu.</p>
           </div>
           <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#e7f5eb] text-[#075e4b]"><Leaf aria-hidden="true" className="h-5 w-5" /></div>
         </div>
@@ -107,20 +107,20 @@ export default function HarvestTab({
           </label>
         </div>
 
-        <div className="surface-soft mt-4 p-4 text-center sm:p-5">
+        <div className="surface-soft mt-4 overflow-hidden p-3 text-center sm:p-5">
           <label htmlFor="harvest-weight" className="eyebrow block">Khối lượng vừa thu</label>
-          <div className="mt-2 flex items-baseline justify-center gap-2">
+          <div className="mx-auto mt-2 flex max-w-[260px] min-w-0 items-baseline justify-center gap-2">
             <input
               id="harvest-weight" type="number" inputMode="numeric" min="1" step="1"
-              className="w-[min(60vw,260px)] border-0 bg-transparent text-center font-['Be_Vietnam_Pro'] text-[clamp(2.7rem,12vw,4.25rem)] font-extrabold tracking-[-.07em] text-[#075e4b] outline-none placeholder:text-[#a7c9b4] focus:ring-0"
+              className="min-w-0 w-full border-0 bg-transparent text-center font-['Be_Vietnam_Pro'] text-[clamp(2rem,9vw,3.25rem)] font-extrabold tracking-[-.06em] text-[#075e4b] outline-none placeholder:text-[#729b83] focus:ring-0"
               value={weight} onChange={(event) => setWeight(event.target.value)} placeholder="0" aria-describedby="harvest-weight-help"
             />
             <span className="text-base font-bold text-[#60736d]">g</span>
           </div>
           <p id="harvest-weight-help" className="mb-4 text-sm text-[#71847a]">{Number(weight) > 0 ? `≈ ${(Number(weight) / 1000).toLocaleString('vi-VN', { maximumFractionDigits: 2 })} kg` : 'Nhập gram hoặc chọn mức cộng nhanh'}</p>
-          <div className="grid grid-cols-4 gap-2">
+          <div className="grid grid-cols-4 gap-1.5 sm:gap-2">
             {[50, 100, 500, 1000].map((grams) => (
-              <button key={grams} type="button" onClick={() => addWeight(grams)} className="btn-secondary min-h-11 px-1 text-[13px] sm:text-sm" aria-label={`Cộng ${grams} gram`}>+{grams === 1000 ? '1 kg' : `${grams} g`}</button>
+              <button key={grams} type="button" onClick={() => addWeight(grams)} className="btn-secondary min-h-11 min-w-0 whitespace-nowrap px-0.5 text-[11px] sm:text-sm" aria-label={`Cộng ${grams} gram`}>+{grams === 1000 ? '1kg' : `${grams}g`}</button>
             ))}
           </div>
         </div>

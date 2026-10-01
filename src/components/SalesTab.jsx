@@ -136,12 +136,12 @@ export default function SalesTab({
       <div className="grid gap-3 sm:grid-cols-2">
         <div className="surface p-4">
           <p className="eyebrow">Đã bán</p>
-          <p className="mt-1 font-['Be_Vietnam_Pro'] text-2xl font-extrabold tabular-nums">{soldWeight.toLocaleString('vi-VN')} g</p>
+          <p className="metric-number mt-1 font-['Be_Vietnam_Pro'] font-extrabold tabular-nums">{soldWeight.toLocaleString('vi-VN')} g</p>
           <p className="text-sm text-[#60736d]">{sales.length} đơn bán</p>
         </div>
         {canViewFinance && <div className="surface p-4">
           <p className="eyebrow">Công nợ còn thu</p>
-          <p className="mt-1 font-['Be_Vietnam_Pro'] text-2xl font-extrabold text-[#9b6225] tabular-nums">{money(totalDebt)} đ</p>
+          <p className="metric-number mt-1 font-['Be_Vietnam_Pro'] font-extrabold text-[#9b6225] tabular-nums">{money(totalDebt)} đ</p>
           <p className="text-sm text-[#60736d]">{sales.filter((sale) => sale.status === 'debt').length} đơn ghi nợ</p>
         </div>}
       </div>
@@ -155,7 +155,7 @@ export default function SalesTab({
             <label><span className="mb-1.5 block text-sm font-semibold text-[#41594d]">Loại tổ bán</span><select className="field" value={product?.id || ''} onChange={(event) => chooseProduct(event.target.value)} required>{catalog.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
             <div className="grid grid-cols-2 gap-3">
               <label><span className="mb-1.5 block text-sm font-semibold text-[#41594d]">Số lượng (g)</span><input className="field text-lg font-bold tabular-nums" type="number" inputMode="numeric" min="1" step="1" value={weight} onChange={(event) => setWeight(event.target.value)} placeholder="0" required /></label>
-              <div className="surface-soft flex flex-col justify-center px-3"><span className="text-xs font-semibold text-[#60736d]">Kho còn</span><strong className="font-['Be_Vietnam_Pro'] text-lg text-[#075e4b] tabular-nums">{stock.toLocaleString('vi-VN')} g</strong></div>
+              <div className="surface-soft flex min-w-0 flex-col justify-center px-3"><span className="text-xs font-semibold text-[#60736d]">Kho còn</span><strong className="metric-number font-['Be_Vietnam_Pro'] text-[#075e4b] tabular-nums">{stock.toLocaleString('vi-VN')} g</strong></div>
             </div>
             {insufficient && <p role="alert" className="flex items-start gap-2 rounded-xl bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-900"><CircleAlert aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0" />Số bán lớn hơn tồn kho của loại tổ này.</p>}
             <div className="grid gap-3 sm:grid-cols-2">
@@ -170,7 +170,7 @@ export default function SalesTab({
             </fieldset>
             <div className="surface-soft grid gap-3 p-3 sm:grid-cols-2">
               <label><span className="mb-1.5 block text-sm font-semibold text-[#41594d]">Giá bán / 100 g</span><input className="field tabular-nums" type="number" inputMode="numeric" min="0" step="1000" value={pricePer100g} onChange={(event) => setPricePer100g(event.target.value)} readOnly={!canViewFinance} aria-readonly={!canViewFinance} /></label>
-              <div className="flex flex-col justify-center"><span className="text-xs font-semibold text-[#60736d]">Thành tiền</span><strong className="font-['Be_Vietnam_Pro'] text-xl font-extrabold text-[#075e4b] tabular-nums">{money(totalAmount)} đ</strong></div>
+              <div className="flex min-w-0 flex-col justify-center"><span className="text-xs font-semibold text-[#60736d]">Thành tiền</span><strong className="metric-number font-['Be_Vietnam_Pro'] font-extrabold text-[#075e4b] tabular-nums">{money(totalAmount)} đ</strong></div>
             </div>
             <details className="rounded-2xl border border-[#e1ebe3] px-4 py-3"><summary className="min-h-8 cursor-pointer text-sm font-semibold text-[#41594d]">Thêm tag và ghi chú</summary><div className="mt-3 space-y-3 border-t border-[#e1ebe3] pt-3">
               {activeTags.length > 0 && <fieldset><legend className="mb-2 text-sm font-semibold">Tag</legend><div className="flex flex-wrap gap-2">{activeTags.map((tag) => {

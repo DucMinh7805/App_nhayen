@@ -2,12 +2,12 @@ import React, { useState } from 'react';
 import { BarChart3, Bird, ShoppingBag, History, Menu, Package, Building2, SlidersHorizontal, UserRound, LogOut, X } from 'lucide-react';
 
 const PRIMARY = [
-  { id: 'dashboard', label: 'Tổng quan', icon: BarChart3 },
+  { id: 'dashboard', label: 'Trang chủ', icon: BarChart3 },
   { id: 'harvest', label: 'Thu hoạch', icon: Bird },
   { id: 'sales', label: 'Bán hàng', icon: ShoppingBag },
-  { id: 'history', label: 'Lịch sử', icon: History },
 ];
 const MORE = [
+  { id: 'history', label: 'Lịch sử', icon: History },
   { id: 'inventory', label: 'Kho tại nhà', icon: Package },
   { id: 'houses', label: 'Nhà yến', icon: Building2, admin: true },
   { id: 'settings', label: 'Danh mục & tên gọi', icon: SlidersHorizontal, admin: true },
@@ -51,14 +51,14 @@ export default function BottomNav({ activeTab, setActiveTab, session, onLogout, 
         </div>
       )}
       <nav aria-label="Điều hướng chính" className="mobile-bottom-nav border-t border-[#e1ebe3] bg-white/95 px-1 pt-2 shadow-[0_-8px_26px_rgba(23,64,45,.07)] backdrop-blur-xl lg:hidden">
-        <div className="mx-auto grid max-w-xl grid-cols-5 items-center">
+        <div className="mx-auto grid max-w-xl grid-cols-4 items-center">
           {PRIMARY.map((item) => {
             const Icon = item.icon;
             const selected = activeTab === item.id;
             return (
               <button key={item.id} type="button" onClick={() => go(item.id)} aria-current={selected ? 'page' : undefined} className={`flex min-h-[55px] min-w-0 flex-col items-center justify-center gap-1 rounded-xl px-1 text-[11px] font-semibold transition-colors ${selected ? 'text-[#075e4b]' : 'text-[#71847a]'}`}>
                 <span className={`flex h-7 w-10 items-center justify-center rounded-xl ${selected ? 'bg-[#e6f3eb]' : ''}`}><Icon aria-hidden="true" className="h-[19px] w-[19px]" strokeWidth={1.9} /></span>
-                <span className="max-w-full truncate">{settings[`${item.id}Label`] || item.label}</span>
+                <span className="max-w-full text-center leading-4 [overflow-wrap:anywhere]">{settings[`${item.id}Label`] || item.label}</span>
               </button>
             );
           })}

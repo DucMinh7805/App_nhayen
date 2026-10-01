@@ -4,7 +4,9 @@ import {
   Building2,
   CalendarDays,
   ChevronDown,
+  ChevronRight,
   Feather,
+  History,
   Package,
   ShoppingBag,
   Wallet,
@@ -76,9 +78,9 @@ function SelectField({ id, label, value, onChange, children, icon: Icon }) {
 function MetricCard({ icon: Icon, label, value, detail, featured = false, title }) {
   return (
     <article
-      className={`group min-w-0 rounded-[1.4rem] border p-4 shadow-sm transition-transform duration-200 motion-safe:hover:-translate-y-0.5 motion-reduce:transition-none sm:p-5 ${
+      className={`group min-w-0 rounded-[1.25rem] border p-3.5 shadow-sm transition-transform duration-200 motion-safe:hover:-translate-y-0.5 motion-reduce:transition-none sm:p-5 ${
         featured
-          ? 'col-span-2 border-emerald-800 bg-gradient-to-br from-emerald-800 to-emerald-700 text-white lg:col-span-1'
+          ? 'col-span-2 border-emerald-800 bg-gradient-to-br from-emerald-800 to-emerald-700 text-white'
           : 'border-[#e2ebe5] bg-white text-slate-900'
       }`}
     >
@@ -88,10 +90,10 @@ function MetricCard({ icon: Icon, label, value, detail, featured = false, title 
           <Icon size={18} aria-hidden="true" />
         </span>
       </div>
-      <p className={`mt-4 break-words text-[1.55rem] font-bold leading-none tracking-tight tabular-nums sm:text-[1.8rem] ${featured ? 'text-white' : 'text-slate-900'}`} title={title || value}>
+      <p className={`metric-number mt-3 font-bold tracking-tight tabular-nums ${featured ? 'metric-number-lg text-white' : 'text-slate-900'}`} title={title || value}>
         {value}
       </p>
-      <p className={`mt-2 text-[11px] leading-4 sm:text-xs ${featured ? 'text-emerald-100/90' : 'text-slate-500'}`}>{detail}</p>
+      <p className={`mt-2 text-xs leading-4 ${featured ? 'text-emerald-100/90' : 'text-slate-500'}`}>{detail}</p>
     </article>
   );
 }
@@ -138,11 +140,11 @@ function buildTrend(harvests, year, month, mode) {
   return buckets;
 }
 
-export default function DashboardTab({ houses = [], harvests = [], sales = [], inventoryData, session }) {
+export default function DashboardTab({ houses = [], harvests = [], sales = [], inventoryData, session, settings = {}, onNavigate }) {
   const [today, setToday] = useState(() => new Date());
   const currentYear = today.getFullYear();
   const [selectedHouseId, setSelectedHouseId] = useState('all');
-  const [selectedMonth, setSelectedMonth] = useState(() => new Date().getMonth() + 1);
+  const [selectedMonth, setSelectedMonth] = useState(0);
   const [selectedYear, setSelectedYear] = useState(() => new Date().getFullYear());
   const [chartMode, setChartMode] = useState('week');
   const isAdmin = session?.role === 'admin';
@@ -223,26 +225,37 @@ export default function DashboardTab({ houses = [], harvests = [], sales = [], i
       return map;
     }, new Map()).values()].sort((a, b) => b.value - a.value);
   const comparisonMax = Math.max(1, ...comparison.map((item) => item.value));
+  const shortcuts = [
+    { tab: 'harvest', label: 'Thu hoạch', hint: 'Ghi số gram', icon: Feather },
+    { tab: 'sales', label: 'Bán hàng', hint: 'Tạo đơn bán', icon: ShoppingBag },
+    { tab: 'inventory', label: 'Xem kho', hint: 'Yến còn lại', icon: Package },
+    { tab: 'history', label: 'Lịch sử', hint: 'Tìm phiếu cũ', icon: History },
+  ];
 
   return (
     <section aria-labelledby="dashboard-title" className="space-y-4 pb-3 md:space-y-5">
-      <div className="relative overflow-hidden rounded-[1.7rem] border border-emerald-100 bg-[#eaf5ed] px-4 py-4 sm:px-7 sm:py-6">
-        <div aria-hidden="true" className="pointer-events-none absolute -right-8 -top-12 h-44 w-44 rounded-full border-[28px] border-white/35" />
-        <p className="relative text-[11px] font-bold uppercase tracking-[0.18em] text-emerald-700">Tổng quan gia đình</p>
-        <h2 id="dashboard-title" className="relative mt-1 text-xl font-bold tracking-tight text-[#194b3e] sm:mt-1.5 sm:text-3xl">Sản lượng yến sào</h2>
-        <p className="relative mt-1.5 hidden max-w-xl text-sm leading-5 text-emerald-950/70 sm:block">
-          {selectedHouseName
-            ? `Xem thu hoạch của ${selectedHouseName} và đơn bán từ kho chung.`
-            : 'Xem thu hoạch từ các nhà yến và đơn bán từ kho chung.'}
-        </p>
+      <div className="rounded-[1.35rem] border border-emerald-100 bg-[#eaf5ed] px-4 py-4 sm:px-6 sm:py-5">
+        <p className="text-xs font-bold text-emerald-700">Sổ yến gia đình</p>
+        <h2 id="dashboard-title" className="mt-1 text-xl font-extrabold leading-tight text-[#194b3e] sm:text-2xl">Bắt đầu từ đây</h2>
+        <p className="mt-1 text-sm text-[#52665d]">Chọn việc bạn muốn làm, số liệu nằm ngay bên dưới.</p>
       </div>
 
-      <div className="rounded-[1.4rem] border border-[#e2ebe5] bg-white p-4 shadow-sm sm:p-5">
-        <div className="mb-3 flex items-center justify-between gap-2">
-          <h3 className="text-sm font-bold text-slate-900">Lọc báo cáo</h3>
-          <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-800">{periodLabel}</span>
-        </div>
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+      <nav aria-label="Chức năng nhanh" className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+        {shortcuts.map(({ tab, label, hint, icon: Icon }) => (
+          <button key={tab} type="button" onClick={() => onNavigate?.(tab)} className="flex min-h-[74px] min-w-0 items-center gap-2.5 rounded-[1.15rem] border border-[#dce8e1] bg-white px-3 text-left text-sm text-[#18312d] shadow-sm transition-colors hover:border-[#91c6aa] hover:bg-[#f4faf6]">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#e7f5eb] text-[#075e4b]"><Icon size={19} aria-hidden="true" /></span>
+            <span className="min-w-0 flex-1 leading-tight"><strong className="block font-bold [overflow-wrap:anywhere]">{settings[`${tab}Label`] || label}</strong><small className="mt-1 block text-[11px] leading-4 text-[#71847a]">{hint}</small></span>
+            <ChevronRight size={15} aria-hidden="true" className="hidden shrink-0 text-[#71847a] sm:block" />
+          </button>
+        ))}
+      </nav>
+
+      <details className="rounded-[1.15rem] border border-[#e2ebe5] bg-white px-4 py-3 shadow-sm">
+        <summary className="flex min-h-9 cursor-pointer list-none items-center justify-between gap-3 text-sm font-bold text-[#18312d]">
+          <span className="min-w-0">Báo cáo: {periodLabel}{selectedHouseName ? ` · ${selectedHouseName}` : ''}</span>
+          <span className="flex shrink-0 items-center gap-1 text-xs text-[#075e4b]">Đổi lọc <ChevronDown size={16} aria-hidden="true" /></span>
+        </summary>
+        <div className="grid grid-cols-2 gap-3 border-t border-[#e2ebe5] pt-4 sm:grid-cols-3">
           <div className="col-span-2 sm:col-span-1">
             <SelectField id="dashboard-house" label="Nhà yến" icon={Building2} value={effectiveHouseId} onChange={(event) => setSelectedHouseId(event.target.value)}>
               <option value="all">Tất cả nhà yến</option>
@@ -257,26 +270,30 @@ export default function DashboardTab({ houses = [], harvests = [], sales = [], i
             {yearOptions.map((year) => <option key={year} value={year}>{year}</option>)}
           </SelectField>
         </div>
-        {effectiveHouseId !== 'all' && (
-          <p className="mt-3 text-xs leading-5 text-slate-500">Bộ lọc nhà chỉ áp dụng cho thu hoạch. Đơn bán và tồn kho được tính cho kho chung.</p>
-        )}
+        {effectiveHouseId !== 'all' && <p className="mt-3 text-xs leading-5 text-slate-500">Nhà yến chỉ lọc sản lượng thu hoạch. Kho và đơn bán vẫn tính chung.</p>}
+      </details>
+
+      <div className="grid grid-cols-2 gap-2.5 sm:gap-3">
+        <MetricCard featured icon={Feather} label={`Đã thu · ${periodLabel}`} value={formatWeight(totalHarvest)} detail={`${periodHarvests.length} phiếu thu hoạch`} />
+        <MetricCard icon={CalendarDays} label="Hôm nay" value={formatWeight(todayHarvest)} detail={`${todayHarvests.length} phiếu đã ghi`} />
+        <MetricCard icon={Package} label="Kho đang có" value={formatWeight(centralStock)} detail="Tồn kho chung hiện tại" />
       </div>
 
-      <div className={`grid grid-cols-2 gap-3 lg:grid-cols-3 ${isAdmin ? 'xl:grid-cols-5' : ''}`}>
-        <MetricCard featured icon={Feather} label={`Thu hoạch · ${periodLabel}`} value={formatWeight(totalHarvest)} detail={`${periodHarvests.length} phiếu trong kỳ đang lọc`} />
-        <MetricCard icon={CalendarDays} label="Hôm nay" value={formatWeight(todayHarvest)} detail={`${todayHarvests.length} phiếu · ${today.toLocaleDateString('vi-VN')}`} />
-        <MetricCard icon={BarChart3} label={`Cả năm ${selectedYear}`} value={formatWeight(yearHarvest)} detail={`${yearHarvests.length} phiếu thu hoạch`} />
-        <MetricCard icon={ShoppingBag} label="Đã bán · kho chung" value={formatWeight(totalSold)} detail={`${periodSales.length} đơn toàn kho trong kỳ`} />
-        <MetricCard icon={Package} label="Tồn kho chung" value={formatWeight(centralStock)} detail={centralStock < 0 ? 'Kho đang thiếu hàng, cần đối chiếu phiếu' : 'Số hiện tại, không đổi theo bộ lọc'} />
-        {isAdmin && (
-          <>
-            <MetricCard icon={Wallet} label="Doanh thu kho chung" value={compactMoney(totalRevenue)} title={formatMoney(totalRevenue)} detail={`Toàn kho · đã thu ${compactMoney(paidRevenue)}`} />
-            <MetricCard icon={Wallet} label="Còn công nợ" value={compactMoney(debt)} title={formatMoney(debt)} detail="Đơn kho chung chưa thanh toán" />
-          </>
-        )}
-      </div>
+      <details className="rounded-[1.25rem] border border-[#e2ebe5] bg-white px-4 py-3 shadow-sm">
+        <summary className="flex min-h-9 cursor-pointer list-none items-center justify-between gap-3 text-sm font-bold text-[#075e4b]">Xem thêm số liệu <ChevronDown size={17} aria-hidden="true" /></summary>
+        <div className="mt-3 grid grid-cols-1 gap-2.5 border-t border-[#e2ebe5] pt-3 sm:grid-cols-2 sm:gap-3">
+          {selectedMonth > 0 && <MetricCard icon={BarChart3} label={`Cả năm ${selectedYear}`} value={formatWeight(yearHarvest)} detail={`${yearHarvests.length} phiếu thu hoạch`} />}
+          <MetricCard icon={ShoppingBag} label="Đã bán trong kỳ" value={formatWeight(totalSold)} detail={`${periodSales.length} đơn từ kho chung`} />
+          {isAdmin && <>
+            <MetricCard icon={Wallet} label="Doanh thu" value={compactMoney(totalRevenue)} title={formatMoney(totalRevenue)} detail={`Đã thu ${compactMoney(paidRevenue)}`} />
+            <MetricCard icon={Wallet} label="Công nợ" value={compactMoney(debt)} title={formatMoney(debt)} detail="Đơn chưa thanh toán" />
+          </>}
+        </div>
+      </details>
 
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.65fr)_minmax(18rem,1fr)] xl:gap-5">
+      <details className="rounded-[1.25rem] border border-[#e2ebe5] bg-white px-3 py-3 shadow-sm sm:px-4">
+        <summary className="flex min-h-9 cursor-pointer list-none items-center justify-between gap-3 px-1 text-sm font-bold text-[#075e4b]">Biểu đồ và sản lượng {effectiveHouseId === 'all' ? 'từng nhà' : 'theo loại tổ'} <ChevronDown size={17} aria-hidden="true" /></summary>
+      <div className="mt-3 grid gap-4 border-t border-[#e2ebe5] pt-3 xl:grid-cols-[minmax(0,1.65fr)_minmax(18rem,1fr)] xl:gap-5">
         <section aria-labelledby="production-trend-title" className="min-w-0 rounded-[1.5rem] border border-[#e2ebe5] bg-white p-4 shadow-sm sm:p-6">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
@@ -341,7 +358,7 @@ export default function DashboardTab({ houses = [], harvests = [], sales = [], i
                 <li key={item.key}>
                   <div className="mb-2 flex items-baseline justify-between gap-3 text-xs">
                     <span className="min-w-0 truncate font-semibold text-slate-700" title={item.label}>{item.label}</span>
-                    <strong className="shrink-0 tabular-nums text-slate-900">{formatWeight(item.value)}</strong>
+                    <strong className="min-w-0 text-right tabular-nums text-slate-900 [overflow-wrap:anywhere]">{formatWeight(item.value)}</strong>
                   </div>
                   <div className="h-2.5 overflow-hidden rounded-full bg-emerald-50" aria-hidden="true">
                     <div className="h-full rounded-full bg-gradient-to-r from-emerald-700 to-emerald-400 transition-[width] duration-300 motion-reduce:transition-none" style={{ width: `${(item.value / comparisonMax) * 100}%` }} />
@@ -352,6 +369,7 @@ export default function DashboardTab({ houses = [], harvests = [], sales = [], i
           )}
         </section>
       </div>
+      </details>
     </section>
   );
 }

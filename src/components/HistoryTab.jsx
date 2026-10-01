@@ -107,9 +107,9 @@ export default function HistoryTab({
       </section>
 
       <section className="grid gap-3 sm:grid-cols-3">
-        <div className="surface p-4"><p className="eyebrow">Số phiếu</p><p className="mt-1 font-['Be_Vietnam_Pro'] text-2xl font-extrabold tabular-nums">{records.length}</p></div>
-        <div className="surface p-4"><p className="eyebrow">{kind === 'harvests' ? 'Đã thu' : 'Đã bán'}</p><p className="mt-1 font-['Be_Vietnam_Pro'] text-2xl font-extrabold text-[#075e4b] tabular-nums">{amount(totalWeight)} g</p></div>
-        {kind === 'sales' && isAdmin && <div className="surface p-4"><p className="eyebrow">Giá trị đơn</p><p className="mt-1 font-['Be_Vietnam_Pro'] text-2xl font-extrabold tabular-nums">{amount(totalAmount)} đ</p></div>}
+        <div className="surface min-w-0 p-4"><p className="eyebrow">Số phiếu</p><p className="metric-number mt-1 font-['Be_Vietnam_Pro'] font-extrabold tabular-nums">{records.length}</p></div>
+        <div className="surface min-w-0 p-4"><p className="eyebrow">{kind === 'harvests' ? 'Đã thu' : 'Đã bán'}</p><p className="metric-number mt-1 font-['Be_Vietnam_Pro'] font-extrabold text-[#075e4b] tabular-nums">{amount(totalWeight)} g</p></div>
+        {kind === 'sales' && isAdmin && <div className="surface min-w-0 p-4"><p className="eyebrow">Giá trị đơn</p><p className="metric-number mt-1 font-['Be_Vietnam_Pro'] font-extrabold tabular-nums">{amount(totalAmount)} đ</p></div>}
       </section>
 
       <section className="surface p-4 sm:p-5">

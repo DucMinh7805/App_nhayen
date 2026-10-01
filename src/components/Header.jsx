@@ -31,8 +31,8 @@ export default function Header({ activeTab, appName, session, onRefresh, isRefre
           <div className="flex items-center gap-2 md:hidden">
             <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[12px] bg-[#075e4b] font-['Be_Vietnam_Pro'] text-[13px] font-extrabold tracking-tight text-white">MT</span>
             <div className="min-w-0">
-              <div className="truncate font-['Be_Vietnam_Pro'] text-[13px] font-bold leading-tight text-[#18312d]">{appName}</div>
-              <div className="truncate text-xs text-[#60736d]">{title} · {statusText}</div>
+              <div className="max-w-[70vw] font-['Be_Vietnam_Pro'] text-[clamp(12px,3.1vw,14px)] font-bold leading-tight text-[#18312d]" title={appName}>{appName}</div>
+              <div className="text-xs text-[#60736d]">{title}{syncStatus === 'offline' ? ' · Chưa đồng bộ' : ''}</div>
             </div>
           </div>
           <div className="hidden md:block">

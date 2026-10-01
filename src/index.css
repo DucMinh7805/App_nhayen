@@ -45,6 +45,14 @@ h1, h2, h3, h4, .brand-type, .display-type {
   letter-spacing: -.035em;
 }
 .tabular-nums { font-variant-numeric: tabular-nums; }
+.metric-number {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  font-size: clamp(1.2rem, 5vw, 1.8rem);
+  line-height: 1.15;
+}
+.metric-number-lg { font-size: clamp(1.75rem, 7vw, 2.6rem); }
 .app-shell {
   background:
     radial-gradient(circle at 90% 0%, rgba(214, 241, 226, .48), transparent 27rem),
